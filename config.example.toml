@@ -1,0 +1,108 @@
+# stockrs 설정 파일 예시
+# 이 파일을 config.toml로 복사하고 실제 값들을 채워넣으세요
+# config.toml은 .gitignore에 추가되어 있어 Git에 커밋되지 않습니다
+
+[database]
+# 주식 가격 데이터베이스 경로 (5분봉)
+stock_db_path = "D:\\db\\stock_price(5min).db"
+# 일봉 데이터베이스 경로
+daily_db_path = "D:\\db\\stock_price(1day)_with_data.db"
+# 거래 결과 저장용 데이터베이스
+trading_db_path = "stockrs/trading.db"
+
+[onnx_model]
+# ONNX 모델 메타데이터 파일 경로
+model_info_path = "data/rust_model_info.json"
+# ONNX 모델 파일 경로
+model_file_path = "data/best_model.onnx"
+# 특징 리스트 파일
+features_file_path = "data/features.txt"
+# 제외할 종목 리스트
+extra_stocks_file_path = "data/extra_stocks.txt"
+
+[korea_investment_api]
+# ====== 실제 거래 API 설정 ======
+# 실제 거래용 API 키
+real_app_key = "YOUR_REAL_APP_KEY_HERE"
+real_app_secret = "YOUR_REAL_APP_SECRET_HERE"
+# 실제 거래 URL
+real_base_url = "https://openapi.koreainvestment.com:9443"
+# 실제 거래 계좌번호
+real_account_number = "YOUR_REAL_ACCOUNT_NUMBER"
+# 실제 거래 종합계좌 여부 (01: 종합계좌, 02: 위탁계좌)
+real_account_product_code = "01"
+
+# ====== 모의투자 API 설정 ======
+# 모의투자용 API 키  
+paper_app_key = "YOUR_PAPER_APP_KEY_HERE"
+paper_app_secret = "YOUR_PAPER_APP_SECRET_HERE"
+# 모의투자 URL
+paper_base_url = "https://openapivts.koreainvestment.com:29443"
+# 모의투자 계좌번호
+paper_account_number = "YOUR_PAPER_ACCOUNT_NUMBER"
+# 모의투자 종합계좌 여부 (01: 종합계좌, 02: 위탁계좌)
+paper_account_product_code = "01"
+
+[trading]
+# 기본 실행 모드 (real/paper/backtest)
+default_mode = "backtest"
+# 최대 포지션 수
+max_positions = 5
+# 포지션당 최대 금액 (원)
+max_position_amount = 1000000
+# 최소 주문 금액 (원)
+min_order_amount = 10000
+# 손절매 비율 (%)
+stop_loss_ratio = 3.0
+# 익절매 비율 (%)
+take_profit_ratio = 5.0
+
+[time_management]
+# 시장 휴무일 파일 경로
+market_close_file_path = "data/market_close_day_2025.txt"
+# 거래 시작 시간 (24시간 형식)
+trading_start_time = "09:00:00"
+# 거래 종료 시간
+trading_end_time = "15:20:00"
+# 이벤트 체크 간격 (초)
+event_check_interval = 30
+
+[logging]
+# 로그 레벨 (error, warn, info, debug, trace)
+level = "info"
+# 로그 파일 경로 (비어있으면 콘솔만 출력)
+file_path = "stockrs/logs/stockrs.log"
+# 로그 파일 최대 크기 (MB)
+max_file_size = 10
+# 보관할 로그 파일 수
+max_files = 5
+
+[risk_management]
+# 일일 최대 손실 한도 (원)
+daily_max_loss = 100000
+# 총 자산 대비 최대 투자 비율 (%)
+max_investment_ratio = 80.0
+# 단일 종목 최대 투자 비율 (%)
+max_single_stock_ratio = 20.0
+# VaR 계산 신뢰구간 (%)
+var_confidence_level = 95.0
+
+[model_prediction]
+# 예측 임계값 (이 값 이상일 때만 매수)
+buy_threshold = 0.6
+# 매도 임계값 (이 값 이하일 때 매도)
+sell_threshold = 0.4
+# 거래대금 상위 N개 종목만 분석
+top_volume_stocks = 30
+# 특징 정규화 여부
+normalize_features = true
+
+[performance]
+# 데이터베이스 연결 풀 크기
+db_pool_size = 10
+# API 요청 제한 (초당 요청 수)
+api_rate_limit = 20
+# 병렬 처리 스레드 수 (0이면 CPU 코어 수)
+worker_threads = 0
+# 메모리 캐시 크기 (MB)
+cache_size_mb = 100 

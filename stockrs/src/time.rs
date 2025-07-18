@@ -115,7 +115,11 @@ fn is_weekend(date: NaiveDate) -> bool {
 
 /// 해당 연도의 공휴일 목록을 파일에서 로드
 fn load_holidays(year: i32) -> Vec<NaiveDate> {
-    let filename = format!("data/market_close_day_{}.txt", year);
+    let filename = if let Ok(config) = crate::config::get_config() {
+        config.time_management.market_close_file_path.clone()
+    } else {
+        format!("../data/market_close_day_{}.txt", year)
+    };
     let path = Path::new(&filename);
     
     if !path.exists() {
@@ -153,6 +157,29 @@ fn next_trading_day(date: NaiveDate) -> NaiveDate {
         next = next + Duration::days(1);
     }
     next
+}
+
+/// 생명주기 패턴 추가 - prototype.py와 동일
+impl TimeService {
+    /// time 시작 시 호출 - prototype.py의 self.time.on_start()
+    pub fn on_start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // TODO: time 초기화 로직
+        Ok(())
+    }
+
+    /// time 업데이트 - prototype.py의 self.time.update()
+    pub fn update(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let (next_time, signal) = self.compute_next_time();
+        self.current = next_time;
+        self.current_signal = signal;
+        Ok(())
+    }
+
+    /// time 종료 시 호출
+    pub fn on_end(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // TODO: time 정리 로직
+        Ok(())
+    }
 }
 
 // ------------------------------------------------

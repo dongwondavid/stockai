@@ -6,3 +6,4 @@ pub mod data_reader;
 pub mod model;
 pub mod broker;
 pub mod db_manager;
+pub mod config;

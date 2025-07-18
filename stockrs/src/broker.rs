@@ -1,69 +1,63 @@
-use crate::api::koreainvestapi::{execute_order, check_fill, cancel_order};
-use crate::api::db_api::{execute_order_from_db, check_fill_from_db, cancel_order_from_db};
-use crate::db_manager::DBManager;
-use crate::types::broker::{Broker, BrokerType, Order};
-use crate::types::api::ApiEnv;
-use chrono::Duration;
 use std::error::Error;
-use std::thread;
+use crate::db_manager::DBManager;
+use crate::types::broker::{Broker, Order};
+use crate::types::api::StockApi;
 
-fn execute_common(order: &Order, db: &DBManager, env: ApiEnv) -> Result<(), Box<dyn Error>> {
-    let order_id = execute_order(order, env)?;
-    let filled = check_fill(&order_id, env)?;
-    if filled {
-        db.save_trading(order.to_trading())?;
-    }
-    thread::sleep(Duration::minutes(5).to_std().unwrap());
-    cancel_order(&order_id, env)?;
-    Ok(())
+/// 통합된 Broker 구현체
+/// prototype.py의 broker(broker_api) 패턴과 동일
+pub struct StockBroker {
+    api: Box<dyn StockApi>,
 }
 
-pub struct RealBroker;
-impl Broker for RealBroker {
+impl StockBroker {
+    pub fn new(api: Box<dyn StockApi>) -> Self {
+        Self { api }
+    }
+}
+
+impl Broker for StockBroker {
     fn validate(&self, _order: &Order) -> Result<(), Box<dyn Error>> {
-        // TODO: add real validation logic
+        // TODO: 주문 유효성 검증 로직
         Ok(())
     }
 
     fn execute(&self, order: &Order, db: &DBManager) -> Result<(), Box<dyn Error>> {
         self.validate(order)?;
-        execute_common(order, db, ApiEnv::Real)
-    }
-}
-
-pub struct PaperBroker;
-impl Broker for PaperBroker {
-    fn validate(&self, order: &Order) -> Result<(), Box<dyn Error>> {
-        RealBroker.validate(order)
-    }
-
-    fn execute(&self, order: &Order, db: &DBManager) -> Result<(), Box<dyn Error>> {
-        self.validate(order)?;
-        execute_common(order, db, ApiEnv::Paper)
-    }
-}
-
-pub struct DbBroker;
-impl Broker for DbBroker {
-    fn validate(&self, _order: &Order) -> Result<(), Box<dyn Error>> { Ok(()) }
-
-    fn execute(&self, order: &Order, db: &DBManager) -> Result<(), Box<dyn Error>> {
-        self.validate(order)?;
-        let order_id = execute_order_from_db(order)?;
-        let filled = check_fill_from_db(&order_id)?;
+        
+        // API를 통한 주문 실행
+        let order_id = self.api.execute_order(order)?;
+        
+        // 체결 확인
+        let filled = self.api.check_fill(&order_id)?;
+        
         if filled {
+            // 거래 결과를 DB에 저장
             db.save_trading(order.to_trading())?;
+        } else {
+            // 미체결 시 주문 취소
+            self.api.cancel_order(&order_id)?;
         }
-        thread::sleep(Duration::minutes(5).to_std().unwrap());
-        cancel_order_from_db(&order_id)?;
+        
         Ok(())
     }
 }
 
-pub fn make_broker(kind: BrokerType) -> Box<dyn Broker> {
-    match kind {
-        BrokerType::REAL => Box::new(RealBroker),
-        BrokerType::PAPER => Box::new(PaperBroker),
-        BrokerType::DB => Box::new(DbBroker),
+/// 생명주기 패턴 추가 - prototype.py와 동일
+impl StockBroker {
+    /// broker 시작 시 호출
+    pub fn on_start(&mut self) -> Result<(), Box<dyn Error>> {
+        // TODO: broker 초기화 로직
+        Ok(())
+    }
+
+    /// broker 이벤트 처리 - prototype.py의 broker.on_event(result)와 동일
+    pub fn on_event(&mut self, order: Order, db: &DBManager) -> Result<(), Box<dyn Error>> {
+        self.execute(&order, db)
+    }
+
+    /// broker 종료 시 호출
+    pub fn on_end(&mut self) -> Result<(), Box<dyn Error>> {
+        // TODO: broker 정리 로직
+        Ok(())
     }
 }

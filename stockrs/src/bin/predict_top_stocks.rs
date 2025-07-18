@@ -40,7 +40,8 @@ struct ONNXPredictor {
 }
 
 fn load_extra_stocks() -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    let file = File::open("data/extra_stocks.txt")?;
+    let config = stockrs::config::get_config()?;
+    let file = File::open(&config.onnx_model.extra_stocks_file_path)?;
     let reader = BufReader::new(file);
     let mut extra_stocks = Vec::new();
     
@@ -61,7 +62,8 @@ fn load_extra_stocks() -> Result<Vec<String>, Box<dyn std::error::Error>> {
 }
 
 fn load_features() -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    let file = File::open("data/features.txt")?;
+    let config = stockrs::config::get_config()?;
+    let file = File::open(&config.onnx_model.features_file_path)?;
     let reader = BufReader::new(file);
     let mut features = Vec::new();
     
@@ -1374,18 +1376,16 @@ struct StockPredictor {
 
 impl StockPredictor {
     fn new(date: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        // 데이터베이스 연결
-        let stock_db_path = std::env::var("STOCK_DB_PATH").unwrap_or_else(|_| "D:\\db\\stock_price(5min).db".to_string());
-        let daily_db_path = std::env::var("DAILY_DB_PATH").unwrap_or_else(|_| "D:\\db\\stock_price(1day)_with_data.db".to_string());
-        
-        let db = Connection::open(&stock_db_path)?;
-        let daily_db = Connection::open(&daily_db_path)?;
+        // 데이터베이스 연결  
+        let config = stockrs::config::get_config()?;
+        let db = Connection::open(&config.database.stock_db_path)?;
+        let daily_db = Connection::open(&config.database.daily_db_path)?;
         
         // 성능 최적화 설정
         Self::optimize_database(&db)?;
         Self::optimize_database(&daily_db)?;
         
-        debug!("데이터베이스 연결 성공: {}", stock_db_path);
+        debug!("데이터베이스 연결 성공: {}", config.database.stock_db_path);
         
         // 일봉 데이터베이스의 테이블 확인 (디버깅용)
         Self::check_daily_db_tables(&daily_db)?;
@@ -1399,8 +1399,8 @@ impl StockPredictor {
         debug!("분석 대상 날짜: {}", target_date);
         
         // ONNX 모델 로드
-        let model_info_path = std::env::var("ONNX_MODEL_INFO_PATH")
-            .unwrap_or_else(|_| "data/rust_model_info.json".to_string());
+        let config = stockrs::config::get_config()?;
+        let model_info_path = &config.onnx_model.model_info_path;
         
         debug!("ONNX 모델 로딩 중...");
         let predictor = load_onnx_model(&model_info_path)?;

@@ -156,3 +156,24 @@ impl DBManager {
         Ok(())
     }
 }
+
+/// 생명주기 패턴 추가 - prototype.py와 동일
+impl DBManager {
+    /// db_manager 시작 시 호출 - prototype.py의 self.db_manager.on_start()
+    pub fn on_start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // TODO: db_manager 초기화 로직
+        Ok(())
+    }
+
+    /// db_manager 이벤트 처리 - prototype.py의 self.db_manager.on_event(broker_result)
+    pub fn on_event(&mut self, _broker_result: ()) -> Result<(), Box<dyn std::error::Error>> {
+        // TODO: broker 결과 처리 로직
+        Ok(())
+    }
+
+    /// db_manager 종료 시 호출 - prototype.py의 self.db_manager.on_end()
+    pub fn on_end(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // TODO: db_manager 정리 로직
+        Ok(())
+    }
+}
