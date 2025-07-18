@@ -1,6 +1,4 @@
 use std::error::Error;
-use std::thread;
-use std::time::Duration;
 
 use crate::time::TimeService;
 use crate::model::Model;
@@ -14,11 +12,6 @@ use std::sync::Arc;
 pub struct Runner {
     /// "real" or "paper" or "backtest" - prototype.py의 self.type
     pub api_type: ApiType,
-    
-    /// prototype.py와 동일한 API 관리 구조
-    real_api: Arc<dyn StockApi>,
-    paper_api: Arc<dyn StockApi>,
-    db_api: Arc<dyn StockApi>,
     
     /// prototype.py의 각 컴포넌트들
     pub time: TimeService,
@@ -67,9 +60,6 @@ impl Runner {
         
         Ok(Runner {
             api_type,
-            real_api,
-            paper_api,
-            db_api: db_api.clone(),
             time: TimeService::new(),
             model,
             broker: StockBroker::new(broker_api),
@@ -119,10 +109,7 @@ impl Runner {
 
     /// prototype.py의 wait_until_next_event 함수와 동일
     fn wait_until_next_event(&self) -> Result<(), Box<dyn Error>> {
-        // TODO: 실제 시간 대기 로직 구현
-        // 현재는 간단한 sleep으로 시뮬레이션
-        thread::sleep(Duration::from_secs(1));
-        Ok(())
+        todo!("시간 기반 이벤트 대기 로직 구현")
     }
 
     /// runner 중지 요청

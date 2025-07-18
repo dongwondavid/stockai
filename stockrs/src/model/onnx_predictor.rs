@@ -83,32 +83,9 @@ impl ONNXPredictor {
     
     /// 최고 확률 종목을 예측합니다
     pub fn predict_top_stock(&self, date: &str) -> Result<String, Box<dyn Error>> {
-        // 일단 예시 구현 - 실제로는 DB 연결 후 분석
         info!("🔮 [ONNX] {}일 최고 확률 종목 예측 중...", date);
         
-        // TODO: 실제 DB 연결 및 분석 로직
-        // 현재는 더미 데이터로 대체
-        let dummy_predictions = vec![
-            PredictionResult {
-                stock_code: "A005930".to_string(), // 삼성전자
-                probability: 0.8,
-            },
-            PredictionResult {
-                stock_code: "A000660".to_string(), // SK하이닉스
-                probability: 0.7,
-            },
-        ];
-        
-        // 최고 확률 종목 반환
-        let best_stock = dummy_predictions
-            .iter()
-            .max_by(|a, b| a.probability.partial_cmp(&b.probability).unwrap())
-            .ok_or("예측 결과가 없습니다")?;
-        
-        info!("🎯 [ONNX] 선택된 종목: {} (확률: {:.2}%)", 
-              best_stock.stock_code, best_stock.probability * 100.0);
-        
-        Ok(best_stock.stock_code.clone())
+        todo!("ONNX 모델을 사용한 실제 종목 예측 구현")
     }
     
     fn load_model_info(path: &str) -> Result<ONNXModelInfo, Box<dyn Error>> {
@@ -150,7 +127,7 @@ impl ONNXPredictor {
     fn load_features(path: &str) -> Result<Vec<String>, Box<dyn Error>> {
         if !Path::new(path).exists() {
             warn!("features.txt 파일이 없습니다: {}", path);
-            return Ok(vec!["dummy_feature".to_string()]);
+            return Err("features.txt 파일이 없습니다".into());
         }
         
         let file = File::open(path)?;

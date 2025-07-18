@@ -56,7 +56,7 @@ impl BalanceParameter {
         }
     }
     pub fn into_iter(&self) -> Vec<(&'static str, String)> {
-        let mut params = vec![
+        let params = vec![
             ("CANO", self.cano.clone()),
             ("ACNT_PRDT_CD", self.acnt_prdt_cd.clone()),
             ("AFHR_FLPR_YN", self.afhr_flpr_yn.clone()),

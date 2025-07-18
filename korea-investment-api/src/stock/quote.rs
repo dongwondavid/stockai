@@ -5,9 +5,9 @@ use crate::{auth, Error};
 pub struct Quote {
     client: reqwest::Client,
     endpoint_url: String,
-    environment: Environment,
+    _environment: Environment,
     auth: auth::Auth,
-    account: Account,
+    _account: Account,
 }
 
 impl Quote {
@@ -27,9 +27,9 @@ impl Quote {
         Ok(Self {
             client: client.clone(),
             endpoint_url,
-            environment,
+            _environment: environment,
             auth,
-            account,
+            _account: account,
         })
     }
 

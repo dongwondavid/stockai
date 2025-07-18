@@ -275,37 +275,26 @@ pub struct DbApi;
 
 impl StockApi for DbApi {
     fn execute_order(&self, _order: &Order) -> Result<String, Box<dyn Error>> {
-        // 더미 구현: 항상 성공하는 주문
-        println!("🔹 [DbApi] Order executed successfully (simulated)");
-        Ok("DUMMY_ORDER_123".to_string())
+        todo!("백테스팅용 DB API 주문 실행 구현")
     }
     
     fn check_fill(&self, _order_id: &str) -> Result<bool, Box<dyn Error>> {
-        // 더미 구현: 항상 체결됨
-        println!("🔹 [DbApi] Order filled: {} (simulated)", _order_id);
-        Ok(true)
+        todo!("백테스팅용 DB API 체결 확인 구현")
     }
     
     fn cancel_order(&self, _order_id: &str) -> Result<(), Box<dyn Error>> {
-        // 더미 구현: 항상 취소 성공
-        println!("🔹 [DbApi] Order cancelled: {} (simulated)", _order_id);
-        Ok(())
+        todo!("백테스팅용 DB API 주문 취소 구현")
     }
     
     fn get_balance(&self) -> Result<AssetInfo, Box<dyn Error>> {
-        // 더미 구현: 가상의 잔고 정보
-        use chrono::Local;
-        println!("🔹 [DbApi] Balance retrieved (simulated)");
-        Ok(AssetInfo::new(Local::now().naive_local(), 1000000.0))
+        todo!("백테스팅용 DB API 잔고 조회 구현")
     }
     
     fn get_avg_price(&self, _stockcode: &str) -> Result<f64, Box<dyn Error>> {
-        // TODO: DB에서 평균가 조회 (새 구조로 교체 예정)
-        todo!("DB API 평균가 조회")
+        todo!("백테스팅용 DB API 평균가 조회 구현")
     }
     
     fn get_current_price(&self, _stockcode: &str) -> Result<f64, Box<dyn Error>> {
-        // TODO: DB에서 현재가 조회 (새 구조로 교체 예정)
-        todo!("DB API 현재가 조회")
+        todo!("백테스팅용 DB API 현재가 조회 구현")
     }
 } 
