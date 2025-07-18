@@ -1,0 +1,12 @@
+{
+    "mcpServers": {
+        "time": {
+            "command": "python",
+            "args": ["-m", "mcp_server_time", "--local-timezone=Asia/Seoul"]
+        },
+        "git": {
+            "command": "python",
+            "args": ["-m", "mcp_server_git"]
+        }
+    }
+}
