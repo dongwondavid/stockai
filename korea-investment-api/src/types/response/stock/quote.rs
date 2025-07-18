@@ -6,6 +6,7 @@ pub type VolumeRankResponse = QuoteResponse<Vec<output::VolumeRank>, (), ()>;
 pub type GroupListResponse = QuoteResponse<Vec<output::GroupList>, (), Vec<output::GroupList>>;
 pub type GroupItemResponse = QuoteResponse<(), output::GroupInfo, Vec<output::GroupItem>>;
 pub type BasicStockInfoResponse = QuoteResponse<output::BasicStockInfo, (), ()>;
+pub type MinutePriceChartResponse = QuoteResponse<(), output::MinutePriceChartOutput1, Vec<output::MinutePriceChartOutput2>>;
 
 #[derive(Clone, Debug, Deserialize, Getters)]
 pub struct QuoteResponse<A, B, C> {
@@ -406,5 +407,61 @@ pub mod output {
         /// 신탁기관발생기관코드
         #[getset(get = "pub")]
         trst_istt_issu_istt_cd: String,
+    }
+
+    #[derive(Clone, Debug, Deserialize, Getters)]
+    pub struct MinutePriceChartOutput1 {
+        /// 전일 대비
+        #[getset(get = "pub")]
+        prdy_vrss: String,
+        /// 전일 대비 부호
+        #[getset(get = "pub")]
+        prdy_vrss_sign: String,
+        /// 전일 대비율
+        #[getset(get = "pub")]
+        prdy_ctrt: String,
+        /// 전일대비 종가
+        #[getset(get = "pub")]
+        stck_prdy_clpr: String,
+        /// 누적 거래량
+        #[getset(get = "pub")]
+        acml_vol: String,
+        /// 누적 거래대금
+        #[getset(get = "pub")]
+        acml_tr_pbmn: String,
+        /// 한글 종목명
+        #[getset(get = "pub")]
+        hts_kor_isnm: String,
+        /// 주식 현재가
+        #[getset(get = "pub")]
+        stck_prpr: String,
+    }
+
+    #[derive(Clone, Debug, Deserialize, Getters)]
+    pub struct MinutePriceChartOutput2 {
+        /// 주식 영업일자
+        #[getset(get = "pub")]
+        stck_bsop_date: String,
+        /// 주식 체결시간
+        #[getset(get = "pub")]
+        stck_cntg_hour: String,
+        /// 주식 현재가
+        #[getset(get = "pub")]
+        stck_prpr: String,
+        /// 주식 시가
+        #[getset(get = "pub")]
+        stck_oprc: String,
+        /// 주식 최고가
+        #[getset(get = "pub")]
+        stck_hgpr: String,
+        /// 주식 최저가
+        #[getset(get = "pub")]
+        stck_lwpr: String,
+        /// 체결 거래량
+        #[getset(get = "pub")]
+        cntg_vol: String,
+        /// 누적 거래대금
+        #[getset(get = "pub")]
+        acml_tr_pbmn: String,
     }
 }

@@ -140,6 +140,25 @@ impl Quote {
             .await?)
     }
 
+    /// 주식당일분봉조회[v1_국내주식-022]
+    pub async fn minute_price_chart(
+        &self,
+        params: request::stock::quote::MinutePriceChartParameter,
+    ) -> Result<response::stock::quote::MinutePriceChartResponse, Error> {
+        let tr_id = TrId::MinutePriceChart;
+        let url = format!(
+            "{}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
+            self.endpoint_url
+        );
+        let url = reqwest::Url::parse_with_params(&url, &params.into_iter())?;
+        Ok(self
+            .create_request(tr_id, url)?
+            .send()
+            .await?
+            .json::<response::stock::quote::MinutePriceChartResponse>()
+            .await?)
+    }
+
     fn create_request(&self, tr_id: TrId, url: url::Url) -> Result<reqwest::RequestBuilder, Error> {
         Ok(self
             .client

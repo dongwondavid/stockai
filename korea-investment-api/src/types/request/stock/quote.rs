@@ -307,3 +307,50 @@ impl BasicStockInfoParameter {
         ]
     }
 }
+
+#[derive(Debug, Clone, Getters, CopyGetters, Setters, Serialize)]
+pub struct MinutePriceChartParameter {
+    /// FID 조건 시장 분류 코드 (J:KRX, NX:NXT, UN:통합)
+    #[getset(get = "pub", set = "pub")]
+    fid_cond_mrkt_div_code: String,
+    /// FID 입력 종목코드 (ex 005930 삼성전자)
+    #[getset(get = "pub", set = "pub")]
+    fid_input_iscd: String,
+    /// FID 입력 시간1 (HHMMSS 형식)
+    #[getset(get = "pub", set = "pub")]
+    fid_input_hour_1: String,
+    /// FID 과거 데이터 포함 여부
+    #[getset(get = "pub", set = "pub")]
+    fid_pw_data_incu_yn: String,
+    /// FID 기타 구분 코드
+    #[getset(get = "pub", set = "pub")]
+    fid_etc_cls_code: String,
+}
+
+impl MinutePriceChartParameter {
+    pub fn new(
+        market_div_code: &str,
+        stock_code: &str,
+        input_hour: &str,
+        include_past_data: bool,
+        etc_cls_code: &str,
+    ) -> Self {
+        Self {
+            fid_cond_mrkt_div_code: market_div_code.to_string(),
+            fid_input_iscd: stock_code.to_string(),
+            fid_input_hour_1: input_hour.to_string(),
+            fid_pw_data_incu_yn: if include_past_data { "Y" } else { "N" }.to_string(),
+            fid_etc_cls_code: etc_cls_code.to_string(),
+        }
+    }
+
+    pub fn into_iter(&self) -> [(&'static str, String); 5] {
+        [
+            ("FID_COND_MRKT_DIV_CODE", self.fid_cond_mrkt_div_code.clone()),
+            ("FID_INPUT_ISCD", self.fid_input_iscd.clone()),
+            ("FID_INPUT_HOUR_1", self.fid_input_hour_1.clone()),
+            ("FID_PW_DATA_INCU_YN", self.fid_pw_data_incu_yn.clone()),
+            ("FID_ETC_CLS_CODE", self.fid_etc_cls_code.clone()),
+        ]
+    }
+}

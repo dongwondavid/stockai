@@ -32,8 +32,8 @@ fn get_config(path: &PathBuf) -> Result<Config, Error> {
 
 async fn get_api(config: &Config) -> Result<KoreaInvestmentApi, Error> {
     let account = Account {
-        cano: config.cano().clone(),
-        acnt_prdt_cd: config.acnt_prdt_cd().clone(),
+        cano: config.cano(),
+        acnt_prdt_cd: config.acnt_prdt_cd().to_string(),
     };
     Ok(KoreaInvestmentApi::new(
         config.environment().clone(),
@@ -110,4 +110,23 @@ async fn main() {
         .await
         .unwrap();
     println!("주식일별주문체결조회 결과: {:?}", daily_ccld);
+
+    // 유량 제한으로 1초 휴식
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    // 주식당일분봉조회 예시
+    let minute_chart_params = korea_investment_api::types::request::stock::quote::MinutePriceChartParameter::new(
+        "J",         // market_div_code: 조건 시장 분류 코드 (J: KRX)
+        "005930",    // stock_code: 입력 종목코드 (삼성전자)
+        "093000",    // input_hour: 입력 시간1 (HHMMSS 형식, 오전 9시30분)
+        false,       // include_past_data: 과거 데이터 포함 여부
+        "",          // etc_cls_code: 기타 구분 코드
+    );
+    
+    let minute_chart = api
+        .quote
+        .minute_price_chart(minute_chart_params)
+        .await
+        .unwrap();
+    println!("주식당일분봉조회 결과: {:?}", minute_chart);
 }

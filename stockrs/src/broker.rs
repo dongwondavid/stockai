@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::sync::Arc;
 use crate::db_manager::DBManager;
 use crate::types::broker::{Broker, Order};
 use crate::types::api::StockApi;
@@ -6,11 +7,11 @@ use crate::types::api::StockApi;
 /// 통합된 Broker 구현체
 /// prototype.py의 broker(broker_api) 패턴과 동일
 pub struct StockBroker {
-    api: Box<dyn StockApi>,
+    api: Arc<dyn StockApi>,
 }
 
 impl StockBroker {
-    pub fn new(api: Box<dyn StockApi>) -> Self {
+    pub fn new(api: Arc<dyn StockApi>) -> Self {
         Self { api }
     }
 }

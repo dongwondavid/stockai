@@ -1,18 +1,17 @@
 use rusqlite::{Connection, Result};
 use crate::types::trading::Trading;
 use std::path::PathBuf;
-use crate::types::data_reader::{DataReader, DataReaderType};
-use crate::data_reader::make_data_reader;
+use std::sync::Arc;
+use crate::types::api::StockApi;
 
 pub struct DBManager {
     conn: Connection,
-    data_reader: Box<dyn DataReader>,
+    api: Arc<dyn StockApi>,
 }
 
 impl DBManager {
-    pub fn new(path: PathBuf, data_reader_type: DataReaderType) -> Result<Self> {
+    pub fn new(path: PathBuf, api: Arc<dyn StockApi>) -> Result<Self> {
         let conn = Connection::open(path)?;
-        let data_reader = make_data_reader(data_reader_type);
 
         // Create trading table
         conn.execute(
@@ -50,12 +49,12 @@ impl DBManager {
             (),
         )?;
 
-        Ok(Self { conn, data_reader })
+        Ok(Self { conn, api })
     }
 
     // Save trading data to database
     pub fn save_trading(&self, trading: Trading) -> Result<()> {
-        let avg_price = self.data_reader.get_avg_price(trading.get_stockcode().to_string()).unwrap();
+        let avg_price = self.api.get_avg_price(&trading.get_stockcode()).unwrap();
         let trading_result = trading.to_trading_result(avg_price);
         
         // Insert trading data
@@ -72,7 +71,7 @@ impl DBManager {
 
     // Initialize today's overview data
     pub fn insert_overview(&self) -> Result<()> {
-        let result = self.data_reader.get_asset_info().unwrap();
+        let result = self.api.get_balance().unwrap();
         let date = result.get_date();
         let asset = result.get_asset();
 
@@ -87,7 +86,7 @@ impl DBManager {
 
     // Update today's overview data
     pub fn update_overview(&self) -> Result<()> {
-        let result = self.data_reader.get_asset_info().unwrap();
+        let result = self.api.get_balance().unwrap();
         let date = result.get_date();
         let asset = result.get_asset();
 
@@ -116,7 +115,7 @@ impl DBManager {
 
     // Finalize today's overview data
     pub fn finish_overview(&self) -> Result<()> {
-        let result = self.data_reader.get_asset_info().unwrap();
+        let result = self.api.get_balance().unwrap();
         let date = result.get_date();
         let asset = result.get_asset();
 

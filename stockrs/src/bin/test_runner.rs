@@ -5,7 +5,7 @@ use stockrs::runner::{Runner, RunnerBuilder};
 use stockrs::time::TimeService;
 use stockrs::types::api::ApiType;
 use stockrs::types::broker::{Order, OrderSide};
-use stockrs::types::data_reader::DataReaderType;
+
 
 /// 테스트용 더미 모델 - 매번 간단한 주문을 생성
 struct DummyModel {
@@ -75,7 +75,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         .api_type(ApiType::Backtest)  // 백테스팅 모드로 테스트
         .model(model)
         .db_path("test.db")
-        .data_reader_type(DataReaderType::DB)
         .build()?;
 
     println!("🏃 Starting Runner...");

@@ -6,13 +6,19 @@ use crate::time::TimeService;
 use crate::model::Model;
 use crate::broker::StockBroker;
 use crate::db_manager::DBManager;
-use crate::types::api::{ApiType, StockApi, create_api};
-use crate::types::data_reader::DataReaderType;
+use crate::types::api::{ApiType, StockApi};
+use crate::apis::{DbApi, KoreaApi};
+use std::sync::Arc;
 
 /// prototype.py의 runner 클래스와 동일한 구조
 pub struct Runner {
     /// "real" or "paper" or "backtest" - prototype.py의 self.type
     pub api_type: ApiType,
+    
+    /// prototype.py와 동일한 API 관리 구조
+    real_api: Arc<dyn StockApi>,
+    paper_api: Arc<dyn StockApi>,
+    db_api: Arc<dyn StockApi>,
     
     /// prototype.py의 각 컴포넌트들
     pub time: TimeService,
@@ -30,17 +36,44 @@ impl Runner {
         api_type: ApiType,
         model: Box<dyn Model>,
         db_path: std::path::PathBuf,
-        data_reader_type: DataReaderType,
     ) -> Result<Self, Box<dyn Error>> {
-        // prototype.py: self.broker_api = real_api() if self.type == "real" else paper_api() if self.type == "paper" else db_api()
-        let broker_api = create_api(api_type, true);
+        // prototype.py와 동일한 API 생성 로직
+        let real_api: Arc<dyn StockApi> = if api_type == ApiType::Real {
+            Arc::new(KoreaApi::new_real()?)
+        } else {
+            Arc::new(DbApi::new()?)
+        };
+        
+        let paper_api: Arc<dyn StockApi> = if api_type == ApiType::Paper {
+            Arc::new(KoreaApi::new_paper()?)
+        } else {
+            Arc::new(DbApi::new()?)
+        };
+        
+        let db_api: Arc<dyn StockApi> = Arc::new(DbApi::new()?);
+        
+        // prototype.py: self.broker_api = real_api if type == "real" else paper_api if type == "paper" else db_api
+        let broker_api = match api_type {
+            ApiType::Real => real_api.clone(),
+            ApiType::Paper => paper_api.clone(),
+            ApiType::Backtest => db_api.clone(),
+        };
+        
+        println!("🚀 [Runner] {} 모드로 초기화 완료", match api_type {
+            ApiType::Real => "실거래",
+            ApiType::Paper => "모의투자", 
+            ApiType::Backtest => "백테스팅",
+        });
         
         Ok(Runner {
             api_type,
+            real_api,
+            paper_api,
+            db_api: db_api.clone(),
             time: TimeService::new(),
             model,
             broker: StockBroker::new(broker_api),
-            db_manager: DBManager::new(db_path, data_reader_type)?,
+            db_manager: DBManager::new(db_path, db_api)?,
             stop_condition: false,
         })
     }
@@ -103,7 +136,6 @@ pub struct RunnerBuilder {
     api_type: ApiType,
     model: Option<Box<dyn Model>>,
     db_path: Option<std::path::PathBuf>,
-    data_reader_type: DataReaderType,
 }
 
 impl RunnerBuilder {
@@ -112,7 +144,6 @@ impl RunnerBuilder {
             api_type: ApiType::Backtest, // 기본값은 백테스팅
             model: None,
             db_path: None,
-            data_reader_type: DataReaderType::DB, // 기본값
         }
     }
 
@@ -131,15 +162,10 @@ impl RunnerBuilder {
         self
     }
 
-    pub fn data_reader_type(mut self, data_reader_type: DataReaderType) -> Self {
-        self.data_reader_type = data_reader_type;
-        self
-    }
-
     pub fn build(self) -> Result<Runner, Box<dyn Error>> {
         let model = self.model.ok_or("Model is required")?;
         let db_path = self.db_path.ok_or("DB path is required")?;
         
-        Runner::new(self.api_type, model, db_path, self.data_reader_type)
+        Runner::new(self.api_type, model, db_path)
     }
 }
