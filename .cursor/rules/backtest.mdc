@@ -1,0 +1,7 @@
+---
+alwaysApply: true
+---
+
+백테스팅은 config.toml 없이도 진행할 수 있으니까 config.example.toml을 이용하기 바람
+
+실전투자 모의투자 개발 진행할때도 직접적으로 config.toml 수정할 수 없으니까 사용자에게 수정사항을 상세히 설명하면서 부탁하기 바람

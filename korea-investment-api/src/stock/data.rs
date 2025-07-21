@@ -98,53 +98,34 @@ impl KoreaStockData {
             }
         };
         loop {
-            if let Ok(msg) = {
-                let _ = conn.send_message(&msg);
-                conn.recv_message()
-            } {
-                match msg {
-                    OwnedMessage::Text(s) => {
-                        let json_value = json::parse(&s)?;
-                        match json_value {
-                            json::JsonValue::Object(obj) => {
-                                if let Some(header) = obj.get("header") {
-                                    if let json::JsonValue::Object(o) = header {
-                                        if let Some(result_tr) = o.get("tr_id") {
-                                            if &result_tr.to_string() == "PINGPONG" {
-                                                continue;
-                                            }
-                                        }
-                                    }
-                                }
-                                if let Some(v) = obj.get("body") {
-                                    match v {
-                                        json::JsonValue::Object(o) => {
-                                            if let Some(s) = o.get("msg1") {
-                                                let s = s.to_string();
-                                                if &s == "SUBSCRIBE SUCCESS" {
-                                                    result.set_success(true);
-                                                }
-                                                result.set_msg(s);
-                                            }
-                                            if let Some(json::JsonValue::Object(o)) =
-                                                o.get("output")
-                                            {
-                                                if let Some(s) = o.get("iv") {
-                                                    result.set_iv(Some(s.to_string()));
-                                                }
-                                                if let Some(s) = o.get("key") {
-                                                    result.set_key(Some(s.to_string()));
-                                                }
-                                            }
-                                        }
-                                        _ => {}
-                                    }
-                                }
+            let _ = conn.send_message(&msg);
+            if let Ok(OwnedMessage::Text(s)) = conn.recv_message() {
+                let json_value = json::parse(&s)?;
+                if let json::JsonValue::Object(obj) = json_value {
+                    if let Some(json::JsonValue::Object(o)) = obj.get("header") {
+                        if let Some(result_tr) = o.get("tr_id") {
+                            if &result_tr.to_string() == "PINGPONG" {
+                                continue;
                             }
-                            _ => {}
                         }
                     }
-                    _ => {}
+                    if let Some(json::JsonValue::Object(o)) = obj.get("body") {
+                        if let Some(s) = o.get("msg1") {
+                            let s = s.to_string();
+                            if &s == "SUBSCRIBE SUCCESS" {
+                                result.set_success(true);
+                            }
+                            result.set_msg(s);
+                        }
+                        if let Some(json::JsonValue::Object(o)) = o.get("output") {
+                            if let Some(s) = o.get("iv") {
+                                result.set_iv(Some(s.to_string()));
+                            }
+                            if let Some(s) = o.get("key") {
+                                result.set_key(Some(s.to_string()));
+                            }
+                        }
+                    }
                 }
             }
             break;
@@ -167,12 +148,12 @@ impl KoreaStockData {
                             }
                             _ => {
                                 error!("Get wrong data from stream={:?}", msg);
-                                panic!();
+                                continue;
                             }
                         }
                     } else {
                         error!("Failed to get message from stream");
-                        panic!();
+                        break;
                     }
                 }
             });
@@ -224,57 +205,40 @@ impl KoreaStockData {
         let mut result = SubscribeResponse::new(false, "".to_string(), None, None);
 
         loop {
-            if let Ok(msg) = conn.recv_message() {
-                match msg {
-                    OwnedMessage::Text(s) => {
-                        let json_value = json::parse(&s)?;
-                        match json_value {
-                            json::JsonValue::Object(obj) => {
-                                if let Some(header) = obj.get("header") {
-                                    if let json::JsonValue::Object(o) = header {
-                                        if let Some(result_tr) = o.get("tr_id") {
-                                            if &result_tr.to_string() == "PINGPONG" {
-                                                continue;
-                                            }
-                                        }
-                                    }
-                                }
-                                if let Some(v) = obj.get("body") {
-                                    match v {
-                                        json::JsonValue::Object(o) => {
-                                            if let Some(s) = o.get("msg1") {
-                                                let s = s.to_string();
-                                                if &s == "SUBSCRIBE SUCCESS" {
-                                                    result.set_success(true);
-                                                }
-                                                result.set_msg(s);
-                                            }
-                                            if let Some(json::JsonValue::Object(o)) =
-                                                o.get("output")
-                                            {
-                                                if let Some(s) = o.get("iv") {
-                                                    result.set_iv(Some(s.to_string()));
-                                                }
-                                                if let Some(s) = o.get("key") {
-                                                    result.set_key(Some(s.to_string()));
-                                                }
-                                            }
-                                        }
-                                        _ => {}
-                                    }
-                                }
+            if let Ok(OwnedMessage::Text(s)) = conn.recv_message() {
+                let json_value = json::parse(&s)?;
+                if let json::JsonValue::Object(obj) = json_value {
+                    if let Some(json::JsonValue::Object(o)) = obj.get("header") {
+                        if let Some(result_tr) = o.get("tr_id") {
+                            if &result_tr.to_string() == "PINGPONG" {
+                                continue;
                             }
-                            _ => {}
                         }
                     }
-                    _ => {}
+                    if let Some(json::JsonValue::Object(o)) = obj.get("body") {
+                        if let Some(s) = o.get("msg1") {
+                            let s = s.to_string();
+                            if &s == "SUBSCRIBE SUCCESS" {
+                                result.set_success(true);
+                            }
+                            result.set_msg(s);
+                        }
+                        if let Some(json::JsonValue::Object(o)) = o.get("output") {
+                            if let Some(s) = o.get("iv") {
+                                result.set_iv(Some(s.to_string()));
+                            }
+                            if let Some(s) = o.get("key") {
+                                result.set_key(Some(s.to_string()));
+                            }
+                        }
+                    }
                 }
             }
             break;
         }
         let handle_ref = self.handles.get(&tr_id);
-        if handle_ref.is_some() {
-            handle_ref.unwrap().abort();
+        if let Some(handle) = handle_ref {
+            handle.abort();
         }
         let (iv, key) = (
             result.iv().clone().expect("no iv"),
@@ -297,12 +261,12 @@ impl KoreaStockData {
                         }
                         _ => {
                             error!("Get wrong data from stream={:?}", msg);
-                            panic!();
+                            continue;
                         }
                     }
                 } else {
                     error!("Failed to get message from stream");
-                    panic!();
+                    break;
                 }
             }
         });

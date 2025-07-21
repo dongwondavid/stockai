@@ -346,7 +346,10 @@ impl MinutePriceChartParameter {
 
     pub fn into_iter(&self) -> [(&'static str, String); 5] {
         [
-            ("FID_COND_MRKT_DIV_CODE", self.fid_cond_mrkt_div_code.clone()),
+            (
+                "FID_COND_MRKT_DIV_CODE",
+                self.fid_cond_mrkt_div_code.clone(),
+            ),
             ("FID_INPUT_ISCD", self.fid_input_iscd.clone()),
             ("FID_INPUT_HOUR_1", self.fid_input_hour_1.clone()),
             ("FID_PW_DATA_INCU_YN", self.fid_pw_data_incu_yn.clone()),

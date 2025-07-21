@@ -310,7 +310,11 @@ impl Korea {
         for (k, v) in params.into_iter() {
             req = req.query(&[(k, v)]);
         }
-        let resp = req.send().await?.json::<crate::types::response::stock::balance::BalanceResponse>().await?;
+        let resp = req
+            .send()
+            .await?
+            .json::<crate::types::response::stock::balance::BalanceResponse>()
+            .await?;
         Ok(resp)
     }
 
@@ -356,7 +360,11 @@ impl Korea {
         for (k, v) in params.into_iter() {
             req = req.query(&[(k, v)]);
         }
-        let resp = req.send().await?.json::<response::stock::order::Body::InquirePsblOrder>().await?;
+        let resp = req
+            .send()
+            .await?
+            .json::<response::stock::order::Body::InquirePsblOrder>()
+            .await?;
         Ok(resp)
     }
 }

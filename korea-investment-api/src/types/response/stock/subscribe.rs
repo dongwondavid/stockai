@@ -38,11 +38,11 @@ pub enum TrType {
     Unregister,
 }
 
-impl Into<String> for TrType {
-    fn into(self) -> String {
-        match self {
-            Self::Register => "1",
-            Self::Unregister => "2",
+impl From<TrType> for String {
+    fn from(val: TrType) -> Self {
+        match val {
+            TrType::Register => "1",
+            TrType::Unregister => "2",
         }
         .to_string()
     }

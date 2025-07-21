@@ -1,0 +1,44 @@
+---
+description: "Rust 개발을 위한 핵심 코딩 표준"
+globs: ["*.rs", "Cargo.toml", "Cargo.lock"]
+alwaysApply: true
+---
+
+# Rust 개발 표준
+
+## 코드 품질 원칙
+
+### 1. 오류 처리
+- `Result<T, E>` 타입을 사용하여 복구 가능한 오류 처리
+- `?` 연산자를 활용한 오류 전파
+- 사용자 정의 오류 타입 정의 시 `thiserror` 크레이트 사용
+
+### 2. 메모리 관리
+- 불필요한 클로닝 최소화
+- 참조자 우선 사용
+- `Box`, `Rc`, `Arc` 적절한 사용
+
+### 3. 로깅 및 트레이싱
+- `tracing` 크레이트 기반 로깅 시스템 도입
+- 에러 로깅 및 스팬(span) 트레이싱 구현
+- 구조화 로그(JSON, key-value) 권장
+
+### 4. 테스트 전략
+- 단위 테스트(unit tests)와 통합 테스트(integration tests) 명확히 구분
+- 모의 객체(mock)와 피처 플래그(feature flags)를 활용하여 테스트 커버리지 확보
+
+### 5. 의존성 관리
+- 최소 의존성 원칙 준수
+- `Cargo.toml`의 feature flag로 경량화 구성
+- 서드파티 크레이트 버전 고정 및 정기적 업데이트 검토
+
+### 6. 타입 및 Trait 설계 원칙
+- 공통 동작 분리는 Trait으로 추상화
+- blanket impl 사용 시 충돌 가능성 고려하여 신중하게 적용
+- NewType 패턴으로 타입 안전성 강화
+- `Option`/`Result`로 상태와 에러를 명확히 표현
+
+### 7. 모듈 구성 스타일
+- `mod.rs` 파일 사용 지양 (Rust 2018+ 스타일 권장)
+- `mod_name.rs` 또는 `mod_name/` 디렉토리 구조 병행 사용
+- 명확한 모듈 책임 분리와 탐색 용이성을 최우선

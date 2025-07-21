@@ -1,0 +1,220 @@
+# 📝 변경 이력 로그
+
+2025-07-21T08:20: config.example.toml: joonwoo 모델 전용 설정 섹션 추가 - 손절매/익절매/추가손절매 비율, 매수/강제정리 시간, 자산비율 설정 추가
+2025-07-21T08:20: stockrs/src/config.rs: JoonwooConfig 구조체 추가 - joonwoo 모델 설정을 위한 새로운 구조체 정의, Config 구조체에 joonwoo 필드 추가, 유효성 검증 로직 추가
+2025-07-21T08:20: stockrs/src/model/joonwoo.rs: 설정 기반 동작으로 변경 - 하드코딩된 값들을 config에서 로드하도록 수정, 시간 파싱 함수 추가, 설정값을 활용한 동적 시간 체크 로직 구현
+
+2025-07-21T08:15: config.example.toml: 미사용 설정 제거 - RiskManagementConfig, ModelPredictionConfig, PerformanceConfig 섹션 전체 제거, LoggingConfig의 file_path, max_file_size, max_files 제거, TradingConfig의 take_profit_ratio, min_order_amount 제거, BacktestConfig의 transaction_tax_rate, securities_tax_rate 제거
+2025-07-21T08:15: stockrs/src/config.rs: 미사용 설정 구조체 제거 - RiskManagementConfig, ModelPredictionConfig, PerformanceConfig 구조체 전체 제거, Config 구조체에서 해당 필드들 제거, 관련 유효성 검증 로직 제거, 테스트 코드에서 해당 필드들 제거
+
+2025-07-21T08:00: stockrs/src/holiday_checker.rs: is_non_trading_day 메서드 시그니처 수정 - &self에서 &mut self로 변경하여 is_holiday 메서드 호출 가능하도록 수정
+2025-07-21T08:00: stockrs/src/time.rs: TimeService의 holiday_checker 필드 활용 - next_trading_day, previous_trading_day, is_non_trading_day 메서드 추가, 기존 독립 함수 제거
+2025-07-21T08:00: stockrs/src/time.rs: compute_next_time 메서드 수정 - next_trading_day 함수 호출을 임시 HolidayChecker 인스턴스 사용으로 변경
+2025-07-21T08:00: stockrs/src/time.rs: skip_to_next_trading_day 메서드 수정 - next_trading_day 함수 호출을 self.next_trading_day로 변경
+2025-07-21T08:00: stockrs/src/time.rs: 테스트 코드 수정 - next_trading_day 함수 호출을 HolidayChecker 인스턴스 사용으로 변경, weekday() 메서드 사용 제거
+2025-07-21T08:00: stockrs/src/time.rs: 불필요한 import 제거 - Weekday, Datelike import 제거하여 경고 해결
+
+2025-07-21T06:30: config.example.toml: 시장 시간 설정 섹션 추가 - market_hours 섹션에 data_prep_time, trading_start_time, trading_end_time, last_update_time, market_close_time 설정 추가
+2025-07-21T06:30: stockrs/src/config.rs: MarketHoursConfig 구조체 추가 - 시장 시간 관련 설정을 위한 새로운 구조체 정의, Config 구조체에 market_hours 필드 추가
+2025-07-21T06:30: stockrs/src/config.rs: TimeManagementConfig 구조체 수정 - trading_start_time, trading_end_time 필드 제거 (market_hours로 이동)
+2025-07-21T06:30: stockrs/src/time.rs: TimeService 하드코딩된 시간 상수 제거 - compute_next_time 함수에서 설정 파일 기반 시간 사용, parse_time_string 헬퍼 함수 추가, compute_next_time_fallback 함수 추가
+2025-07-21T06:30: stockrs/src/time.rs: skip_to_next_trading_day 함수 수정 - 설정 파일에서 거래 시작 시간 읽어오도록 변경
+
+2025-07-21T06:45: stockrs/src/time.rs: TimeService에 시간 캐싱 메커니즘 추가 - cached_time, cache_timestamp, cache_duration 필드 추가, update_cache, invalidate_cache 메서드 구현
+2025-07-21T06:45: stockrs/src/time.rs: now() 메서드 캐싱 로직 적용 - 캐시된 시간이 유효한 경우 사용, 백테스팅 모드에서 시간 단위 일관성 보장
+2025-07-21T06:45: stockrs/src/time.rs: advance(), update(), skip_to_next_trading_day 메서드에서 캐시 업데이트 - 시간 변경 시 자동으로 캐시 갱신
+
+2025-07-21T07:00: stockrs/src/holiday_checker.rs: HolidayChecker 모듈 생성 - 공휴일 체크 로직을 분리하고 모듈화, 캐싱 기능과 에러 처리 개선
+2025-07-21T07:00: stockrs/src/lib.rs: holiday_checker 모듈 추가 - 새로운 HolidayChecker 모듈을 라이브러리에 포함
+2025-07-21T07:00: stockrs/src/time.rs: TimeService에서 HolidayChecker 사용 - 기존 공휴일 관련 함수들 제거, HolidayChecker 인스턴스 추가, next_trading_day 함수 수정
+
+2025-07-21T07:15: stockrs/src/time.rs: TimeService 일관된 에러 처리 적용 - new(), parse_time_string(), 생명주기 메서드들에서 StockrsError::Time 사용
+2025-07-21T07:15: stockrs/src/holiday_checker.rs: HolidayChecker 일관된 에러 처리 적용 - HolidayCheckerError 제거, StockrsError::Time 사용, load_holidays_for_year, holiday_count_for_year 메서드 수정
+
+2025-07-21T07:30: stockrs/src/time.rs: TimeService에 Duration 연산 헬퍼 함수들 추가 - add_minute, add_minutes, add_hours, add_days, subtract_* 함수들 및 diff_* 함수들 추가
+2025-07-21T07:30: stockrs/src/time.rs: TimeService 내부 Duration 연산 중복 제거 - compute_next_time, compute_next_time_fallback 함수에서 add_minute() 헬퍼 함수 사용
+
+2025-07-21T06:15: stockrs/src/time.rs: TimeService에 시간 포맷 변환 헬퍼 함수들 추가 - format_ymdhm, format_ymd, format_hms, format_iso_date, format_iso_datetime 및 정적 함수들 추가, Clone trait 구현
+2025-07-21T06:15: stockrs/src/runner.rs: TimeService 헬퍼 함수 사용으로 변경 - format_ymdhm() 사용하여 중복된 포맷 변환 로직 제거, BacktestApi set_current_time 호출 제거
+2025-07-21T06:15: stockrs/src/model/joonwoo.rs: TimeService 정적 헬퍼 함수 사용 - format_local_ymd, format_local_ymdhm 사용하여 포맷 변환 로직 통일
+2025-07-21T06:15: stockrs/src/apis/backtest_api.rs: current_time 필드 제거 및 TimeService 직접 활용 - time_service 필드로 변경, set_current_time 메서드 제거, get_current_time을 TimeService 기반으로 변경
+2025-07-21T06:15: TASK.md: 시간 처리 로직 개선 작업 완료 표시 - TimeService 포맷 통일 및 BacktestApi current_time 필드 제거 작업 완료
+2025-07-21T05:33: TODO.md: DBManager 로직 수정 작업 완료 표시 - 4개 작업 모두 [x] 체크로 변경, TASK.md에 시간 처리 로직 개선 작업 추가
+2025-07-21T05:26: stockrs/src/runner.rs: 백테스팅 시간 포맷 수정 - on_event, on_start, on_end, finish_overview 호출 시 "%H:%M:%S"에서 "%Y%m%d%H%M" 포맷으로 변경하여 분봉 DB 조회 성공 보장
+2025-07-21T05:26: stockrs/src/db_manager.rs: ApiTypeDetector::calculate_balance_in_backtest 함수 수정 - 시간 파라미터를 실제로 사용하여 BacktestApi::calculate_balance_at_time 호출, 시간 기반 잔고 계산 정확성 확보
+2025-07-21T05:26: stockrs/src/apis/db_api.rs: get_current_price_at_time 쿼리 파라미터 바인딩 확인 - 이미 올바르게 time_str 파라미터를 쿼리에 바인딩하고 있어 수정 불필요
+2025-07-21T05:26: stockrs/src/broker.rs: 손절 계산 로직 확인 - joonwoo.rs에서 "%Y%m%d%H%M" 포맷 사용하여 일관성 확보, fallback 로직 정상 동작 확인
+
+2025-07-20T17:10: stockrs/src/types/trading.rs: Clippy 경고 해결 - TradingResult::new 함수 제거 (11개 파라미터로 too_many_arguments 경고), Builder 패턴만 사용하도록 정리
+2025-07-20T17:05: stockrs/src/apis/db_api.rs: 빌드 오류 해결 - StockrsError::insufficient_balance를 StockrsError::BalanceInquiry로 수정, 사용하지 않는 변수에 언더스코어 추가
+2025-07-20T17:05: stockrs/src/model/onnx_predictor/features/utils.rs: 빌드 오류 해결 - 사용하지 않는 warn import 제거, answer_v3 테이블 없을 때 대체 로직 구현
+2025-07-20T17:05: stockrs/src/apis/db_api.rs: Phase 1 성능 최적화 적용 - DB 인덱스 추가 (WAL 모드, 캐시 크기, 메모리 최적화), SQL 쿼리 최적화, 불필요한 로그 제거
+2025-07-20T17:00: stockrs/src/model/onnx_predictor.rs: Phase 1 성능 최적화 적용 - 벡터 사전 할당 (Vec::with_capacity), 메모리 최적화, 불필요한 로그 제거
+2025-07-20T17:00: stockrs/src/model/joonwoo.rs: Phase 1 성능 최적화 적용 - 현재가 조회 최적화, 불필요한 로그 제거, 메모리 최적화
+2025-07-20T17:00: stockrs/src/model/onnx_predictor/features/utils.rs: Phase 1 성능 최적화 적용 - SQL 쿼리 최적화, 이진 탐색으로 거래일 검색 최적화, 벡터 사전 할당
+2025-07-20T17:00: stockrs/src/runner.rs: Phase 1 성능 최적화 적용 - 조건문 최적화, 불필요한 로그 제거, 메모리 최적화
+
+2025-07-20T16:55: stockrs/src/apis/db_api.rs: 불필요한 현재 시간 설정 완료 로그 제거 - 로그 출력량 최적화
+2025-07-20T16:55: stockrs/src/runner.rs: 불필요한 현재 시간 설정 로그 제거 - 초기화 및 broker.on_start() 전 시간 설정 로그 정리
+
+2025-07-20T16:50: stockrs/src/runner.rs: 백테스팅 모드에서 broker.on_start() 호출 전 현재 시간 설정 로직 추가 - "백테스팅 모드에서 현재 시간이 설정되지 않았습니다" 오류 근본 해결
+
+2025-07-20T16:45: stockrs/src/runner.rs: API 인스턴스 구조 단순화 - 하나의 데이터 소스당 하나의 API 인스턴스만 생성하여 시간 설정 공유 문제 해결, db_api_direct 제거
+2025-07-20T16:45: stockrs/src/model.rs: ApiBundle의 get_db_api() 메서드 수정 - db_api를 다운캐스팅하여 직접 접근하도록 변경
+2025-07-20T16:45: stockrs/src/types/api.rs: StockApi trait에 as_any() 메서드 추가 - trait object에서 다운캐스팅을 위한 인터페이스 제공
+2025-07-20T16:45: stockrs/src/apis/korea_api.rs: KoreaApi에 as_any() 메서드 구현 및 Any trait import 추가
+2025-07-20T16:45: stockrs/src/apis/db_api.rs: DbApi에 as_any() 메서드 구현 및 Any trait import 추가
+
+2025-07-20T16:30: stockrs/src/runner.rs: 백테스팅 모드 초기화 시 DbApi에 현재 시간 설정 로직 추가 - broker.on_start() 호출 전에 초기 시간을 설정하여 "현재 시간이 설정되지 않았습니다" 오류 해결
+
+2025-07-20T16:19: stockrs/src/db_manager.rs: NewType 패턴을 활용한 근본적 오류 처리 개선 - DBResult, BacktestMode, ApiTypeDetector NewType 도입으로 컴파일 오류 해결
+2025-07-20T16:19: stockrs/src/types/api.rs: StockApi trait에 get_balance_at_time 메서드 추가 - 백테스팅 모드에서 특정 시간 잔고 계산을 위한 안전한 인터페이스 제공
+2025-07-20T16:19: stockrs/src/apis/db_api.rs: get_balance_at_time 메서드 구현 - calculate_balance_at_time을 trait 메서드로 노출
+2025-07-20T16:19: stockrs/src/db_manager.rs: as_any() 다운캐스팅 문제 해결 - trait object에서 안전한 백테스팅 모드 처리 로직 구현
+2025-07-20T16:19: stockrs/src/db_manager.rs: StockrsError와 rusqlite::Error 간 변환 문제 해결 - DBResult NewType으로 타입 안전성 확보
+
+2025-07-20T08:30: stockrs/src/apis/db_api.rs: execute_backtest_order 함수 수정 - Order 객체의 fee 필드를 수수료 계산 후 업데이트하도록 수정
+2025-07-20T08:30: stockrs/src/types/broker.rs: Broker trait의 execute 메서드 시그니처 수정 - order를 &mut로 받도록 변경
+2025-07-20T08:30: stockrs/src/types/api.rs: StockApi trait의 execute_order 메서드 시그니처 수정 - order를 &mut로 받도록 변경
+2025-07-20T08:30: stockrs/src/broker.rs: StockBroker의 execute 및 on_event 메서드 수정 - order를 &mut로 받도록 변경
+2025-07-20T08:30: stockrs/src/apis/db_api.rs: DbApi의 execute_order 구현 수정 - order를 &mut로 받도록 변경
+2025-07-20T08:30: stockrs/src/apis/korea_api.rs: KoreaApi의 execute_order 구현 수정 - order를 &mut로 받도록 변경
+2025-07-20T08:30: stockrs/src/runner.rs: broker.on_event 호출 수정 - order를 &mut로 전달하도록 변경
+
+2025-07-20T08:00: config.example.toml: 백테스팅 거래 비용 설정 추가 - 매수/매도 수수료율, 슬리피지율, 거래세율, 증권거래세율 설정 섹션 추가
+2025-07-20T08:00: stockrs/src/config.rs: BacktestConfig 구조체 추가 - 백테스팅용 거래 비용 설정을 위한 새로운 설정 구조체 정의
+2025-07-20T08:00: stockrs/src/config.rs: Config 구조체에 backtest 필드 추가 - 백테스팅 설정을 메인 설정에 포함
+2025-07-20T08:00: stockrs/src/config.rs: 백테스팅 설정 유효성 검증 추가 - 수수료율, 슬리피지율, 세율 범위 검증 (0~10%)
+2025-07-20T08:00: stockrs/src/apis/db_api.rs: 백테스팅 거래 비용 계산 로직 개선 - 설정 기반 수수료/슬리피지/세금 적용, 매수/매도별 차별화된 비용 계산
+2025-07-20T08:00: stockrs/src/apis/db_api.rs: 백테스팅 거래 로깅 강화 - 수수료, 슬리피지, 거래세, 증권거래세 상세 정보 출력
+
+2025-07-20T07:00: stockrs/src/broker.rs: 매도 주문 평균가 조회 로직 수정 - 주문 실행 전에 평균가를 미리 조회하여 매도 후 보유 종목에서 제거된 상태에서 평균가 조회 시 발생하는 오류 해결
+2025-07-20T07:00: stockrs/src/db_manager.rs: save_trading 함수 시그니처 변경 - 평균가를 파라미터로 받도록 수정하여 매도 주문의 평균가 문제 해결
+2025-07-20T07:00: stockrs/src/broker.rs: Trading 구조체 import 추가 - save_trading 함수에서 사용하기 위해 import
+
+2025-07-20T06:30: stockrs/src/apis/db_api.rs: 백테스팅 시간 기반 가격 조회 수정 - get_current_price_from_db_latest() 함수 제거, calculate_balance()와 get_current_price() 함수를 시간 기반으로 동작하도록 수정, current_time 필드 추가 및 set_current_time() 메서드 구현
+2025-07-20T06:30: stockrs/src/runner.rs: 백테스팅 모드에서 DbApi에 현재 시간 설정 로직 추가 - TimeService의 현재 시간을 DB 형식(%Y%m%d%H%M)으로 변환하여 DbApi.set_current_time() 호출
+
+2025-07-20T06:30: stockrs/src/apis/db_api.rs: SQL 오류 처리 개선 - 실제 SQL 쿼리가 실행된 정확한 라인과 SQL 쿼리 자체를 출력하도록 수정 (get_current_price_from_db, get_current_price_from_db_latest, get_top_amount_stocks, debug_db_structure 함수)
+
+2025-07-20T05:22: stockrs/src/runner.rs: 불필요한 로그 출력 제거 - 현재 시각, 공휴일/주말, 다음 거래일 이동, 객체 리셋 등 자주 출력되는 로그들 제거
+2025-07-20T05:22: stockrs/src/model/joonwoo.rs: 불필요한 로그 출력 제거 - 매수 시도, 현재가 조회, 손익 체크 등 자주 출력되는 로그들 제거, 매수/매도 핵심 정보만 출력
+2025-07-20T05:22: stockrs/src/apis/db_api.rs: 불필요한 로그 출력 제거 - 매수/매도 체결 로그 간소화, 디버그 로그들 제거, 핵심 거래 정보만 출력
+2025-07-20T05:22: stockrs/src/apis/db_api.rs: 현재가 조회 로그 제거 - 정확한 시간 조회, 대체 조회, 데이터 발견 등 자주 출력되는 현재가 조회 로그들 모두 제거
+
+2025-07-20T05:00: stockrs/src/apis/db_api.rs: fallback 패턴 제거 - unwrap_or, unwrap_or_else를 에러 발생 코드로 변경 (보유 수량 조회, 거래대금 조회 등)
+2025-07-20T05:00: stockrs/src/db_manager.rs: fallback 패턴 제거 - fee_sum.unwrap_or(0.0), turnover_sum.unwrap_or(0.0)를 에러 발생 코드로 변경
+2025-07-20T05:00: stockrs/src/time.rs: fallback 패턴 제거 - unwrap_or_else(|_| panic!())를 에러 발생 코드로 변경, TimeService::new() 반환 타입을 Result로 변경
+2025-07-20T05:00: stockrs/src/runner.rs: fallback 패턴 제거 - unwrap_or_else(|_| panic!())를 에러 발생 코드로 변경, TimeService::new() 호출 수정
+2025-07-20T05:00: stockrs/src/model/onnx_predictor.rs: fallback 패턴 제거 - sort_by에서 unwrap()을 에러 발생 코드로 변경
+2025-07-20T05:00: stockrs/src/model/onnx_predictor/features/utils.rs: fallback 패턴 제거 - unwrap_or(0)을 에러 발생 코드로 변경 (테이블 존재 여부, 데이터 존재 여부 확인)
+2025-07-20T05:00: stockrs/src/model/onnx_predictor/features/day2.rs: fallback 패턴 제거 - unwrap_or(0), warn!() + return Ok()를 에러 발생 코드로 변경
+2025-07-20T05:00: stockrs/src/model/onnx_predictor/features/day3.rs: fallback 패턴 제거 - unwrap_or(), warn!() + return Ok()를 에러 발생 코드로 변경
+2025-07-20T05:00: stockrs/src/model/onnx_predictor/features/day4.rs: fallback 패턴 제거 - unwrap_or(), warn!() + return Ok()를 에러 발생 코드로 변경
+2025-07-20T05:00: stockrs/src/lib.rs: fallback 패턴 제거 - unwrap_or_else(|e| panic!())를 에러 발생 코드로 변경, init_tracing() 반환 타입을 Result로 변경
+2025-07-20T05:00: stockrs/src/main.rs: init_tracing() 호출 수정 - 에러 처리 추가
+
+2025-07-20T04:30: stockrs/src/apis/db_api.rs: 현재가 조회 로직 수정 - 정확한 시간 데이터 우선 조회, 대체 조회 로직 개선 (41150원 고정 문제 해결)
+2025-07-20T04:30: stockrs/src/apis/db_api.rs: DB 구조 디버깅 함수 추가 (테이블 스키마, 샘플 데이터, 전체 개수 확인)
+2025-07-20T04:30: stockrs/src/model/joonwoo.rs: 매수 시도 시 DB 구조 디버깅 추가 (현재가 조회 문제 파악)
+2025-07-20T04:30: stockrs/src/model.rs: ApiBundle에서 DbApi 직접 접근 로직 수정 (as_any().downcast_ref 사용)
+
+2025-07-20T04:15: stockrs/src/runner.rs: 공휴일 처리 로직 수정 - 2일씩 건너뛰는 문제 해결 (return 제거, 계속 진행하도록 수정)
+2025-07-20T04:15: stockrs/src/runner.rs: 전체 실행 흐름 로깅 강화 (현재 시각, 시그널, 이벤트 처리 결과 상세 출력)
+2025-07-20T04:15: stockrs/src/apis/db_api.rs: 현재가 조회 로깅 강화 (쿼리 실행, 조회 시간, 성공/실패 상세 로그)
+2025-07-20T04:15: stockrs/src/broker.rs: 거래 실행 결과 로깅 강화 (성공/실패 시 상세 정보 출력)
+2025-07-20T04:15: stockrs/src/runner.rs: broker 결과 처리 로직 개선 (성공 시에만 db_manager.on_event 호출)
+2025-07-20T04:15: stockrs/src/db_manager.rs: on_event 함수 구현 개선 (overview 업데이트 로직 명확화)
+2025-07-20T04:15: stockrs/src/model/joonwoo.rs: 현재가 조회 로깅 추가 (매수 시도, 손익 체크 시 상세 로그)
+2025-07-20T04:15: TASK.md: 백테스팅 실행 로직 디버깅 및 수정 태스크로 변경 (발견된 문제점들 정리)
+
+2025-07-20T03:41: stockrs/src/db_manager.rs: DBManager에서 TimeService 의존성 제거, 날짜를 매개변수로 받도록 수정 (unsafe 코드 제거, Rust 표준 준수)
+2025-07-20T03:41: stockrs/src/runner.rs: Runner에서 DBManager 메서드 호출 시 현재 날짜 전달하도록 수정 (TimeService와 DBManager 분리)
+2025-07-20T03:41: stockrs/src/time.rs: 사용하지 않는 import 제거 (Deref, Arc)
+2025-07-20T03:33: stockrs/src/db_manager.rs: DBManager에 TimeService 의존성 추가 (overview 함수들에서 TimeService의 현재 날짜 사용)
+2025-07-20T03:33: stockrs/src/time.rs: TimeServiceRef 래퍼 구조체 추가 (Arc<TimeService>를 위한 가변 메서드 접근)
+2025-07-20T03:33: stockrs/src/runner.rs: Runner에서 TimeService를 Arc로 공유하고 TimeServiceRef 사용 (DBManager와 시간 동기화)
+2025-07-20T03:07: stockrs/src/runner.rs: 매일 새로운 거래일 시작 시 모든 객체 리셋 로직 추가 (모델, 브로커, DB 매니저 상태 초기화)
+2025-07-20T03:07: stockrs/src/db_manager.rs: reset_for_new_day 메서드 추가 (새로운 거래일을 위한 overview 데이터 초기화)
+2025-07-20T03:07: stockrs/src/broker.rs: reset_for_new_day 메서드 추가 (새로운 거래일을 위한 브로커 상태 리셋)
+2025-07-20T03:07: stockrs/src/model.rs: Model trait에 reset_for_new_day 메서드 추가 (매일 새로운 거래일을 위한 모델 상태 리셋)
+2025-07-20T03:07: stockrs/src/model/joonwoo.rs: reset_for_new_day 메서드 구현 (모든 거래 상태 초기화, WaitingForEntry로 리셋)
+2025-07-20T03:04: stockrs/src/time.rs: skip_to_next_trading_day에서 다음 거래일을 09:00으로 설정하도록 수정 (거래 로직 실행을 위한 시간 설정)
+2025-07-20T03:02: stockrs/src/runner.rs: wait_until_next_event에서 Overnight 신호 시 skip_to_next_trading_day 호출하도록 수정 (무한 루프 문제 해결)
+2025-07-20T03:00: stockrs/src/time.rs: TimeService::update 메서드 수정 (Overnight 신호에서 다음 거래일로 실제 이동하도록 개선, 무한 루프 문제 해결)
+2025-07-20T02:15: stockrs/src/time.rs: load_holidays 함수에서 config 경로의 {} 플레이스홀더를 연도로 대체하는 로직 추가 (공휴일 파일 경로 오류 수정)
+2025-07-20T02:10: stockrs/src/runner.rs: 공휴일/주말 체크 로직 추가 (거래 불가능한 날은 다음 거래일로 자동 넘어가기, TimeService.skip_to_next_trading_day 메서드 활용)
+2025-07-20T02:10: stockrs/src/time.rs: skip_to_next_trading_day 메서드 추가 (공휴일/주말 건너뛰기 기능)
+2025-07-20T02:10: stockrs/src/time.rs: is_weekend, is_holiday, load_holidays 함수를 pub으로 변경 (runner에서 접근 가능하도록)
+2025-07-20T02:10: stockrs/src/apis/db_api.rs: 공휴일 체크 로직 제거 (runner에서 처리하므로 중복 제거)
+2025-07-20T02:02: stockrs/src/apis/db_api.rs: 거래대금 조회 및 공휴일 체크 함수에 상세 로깅 추가 (디버깅 개선, 진행률 표시, 오류 상세 정보)
+2025-07-19T23:30: stockrs/src/apis/db_api.rs: 공휴일 체크 로직을 파일 기반으로 개선 (하드코딩 → market_close_day_*.txt 파일 사용, fallback 제거하여 에러 발생)
+2025-07-19T23:30: stockrs/src/apis/db_api.rs: is_holiday 메서드 추가 (파일에서 공휴일 목록 로드)
+2025-07-19T23:30: stockrs/src/errors.rs: Box<dyn Error> 변환 시 중복 "오류:" 메시지 제거 로직 추가
+2025-07-19T23:30: data/market_close_day_2025.txt: 2025년 공휴일 목록 생성 (설정 파일 경로와 일치)
+2025-07-19T23:15: stockrs/src/time.rs: 공휴일 파일이 없을 때 에러 발생하도록 수정 (빈 벡터 반환 → panic)
+2025-07-19T23:15: stockrs/src/time.rs: expect 호출들을 unwrap_or_else로 변경하여 더 명확한 에러 메시지 제공
+2025-07-19T23:15: stockrs/src/runner.rs: expect 호출들을 unwrap_or_else로 변경하여 더 명확한 에러 메시지 제공
+2025-07-19T23:15: stockrs/src/apis/db_api.rs: 공휴일/주말 체크 로직 추가 (거래대금 조회 시 에러 발생)
+2025-07-19T23:15: stockrs/src/model/onnx_predictor.rs: extra_stocks.txt 파일이 없을 때 에러 발생하도록 수정 (경고 → 에러)
+2025-07-19T23:15: stockrs/src/lib.rs: expect 호출들을 unwrap_or_else로 변경하여 더 명확한 에러 메시지 제공
+2025-07-19T23:15: stockrs/src/errors.rs: 테스트 코드의 panic을 assert로 변경
+2025-07-19T23:20: stockrs/src/errors.rs: 에러 메시지 중복 문제 수정 (Box<dyn Error> 변환 시 StockrsError 중복 방지)
+2025-07-19T22:45: stockrs/src/runner.rs: 백테스팅 end_date 체크 로직 추가 (wait_until_next_event에서 종료일 도달 시 에러 반환)
+2025-07-19T22:45: stockrs/src/main.rs: 백테스팅 종료일 도달 에러를 정상 종료로 처리하도록 수정
+2025-07-19T22:30: TASK.md: 백테스팅 잔고 관리 시스템 구현 태스크 추가
+2025-07-19T22:30: stockrs/src/apis/db_api.rs: 백테스팅용 잔고 관리 기능 추가 (Holding 구조체, 주문 시뮬레이션, 잔고 계산)
+2025-07-19T22:30: stockrs/src/broker.rs: 백테스팅 모드별 처리 로직 추가 (TradingMode 구분, 안전한 잔고 조회)
+2025-07-19T22:30: stockrs/src/db_manager.rs: 백테스팅 모드에서 안전한 잔고 조회 처리 추가
+2025-07-19T21:56: TODO.md: todogenerator 규칙에 따라 Phase 2 구현 필요 항목 및 Phase 3 고급 기능 체계적 추가
+2025-07-19T21:05: 백테스팅: 모드 실행 검증 완료 (A204270 매수/매도 거래 성공, DB 저장 확인)
+2025-07-19T21:05: stockrs/src/db_manager.rs: 매도 후 평균가 조회 시 panic 수정 (unwrap → match 패턴)
+2025-07-19T21:05: TASK.md: 백테스팅 모드 실행 검증 작업 완료로 표시
+2025-07-19T21:05: COMPLETE.md: 백테스팅 검증 완료 내역 상세 기록
+2025-07-19T20:34: config.example.toml: 작동 기간 설정 추가 (start_date, end_date)
+2025-07-19T20:34: stockrs/src/config.rs: TimeManagementConfig에 start_date, end_date 필드 추가
+2025-07-19T20:34: stockrs/src/config.rs: 테스트 코드에 start_date, end_date 기본값 설정
+2025-07-19T20:34: stockrs/src/main.rs: 실행 가능한 바이너리 생성 (Runner + joonwoo 모델)
+2025-07-19T20:34: TODO.md: 모의투자 장기 계획 및 아이디어 체계적 정리
+2025-07-19T20:34: TASK.md: 모의투자 개발 우선순위 실행 과제 10개 정의
+2025-07-19T20:34: 프로젝트: 모의투자 개발 체계적 관리 시작 (프로젝트 관리 규칙 적용)
+2025-07-19T21:34: korea-investment-api/src/types/mod.rs: todo!() 매크로 3개 제거하여 실제 에러 발생시키도록 수정
+2025-07-19T21:34: korea-investment-api/src/types/stream/: 암호화 데이터 "None // TODO" 제거하여 실제 에러 발생시키도록 수정
+2025-07-19T21:34: stockrs/src/apis/db_api.rs: 시뮬레이션/백테스팅 코드 제거, 주문 실행 관련 메서드는 에러 발생시키도록 변경
+2025-07-19T21:34: stockrs/src/time.rs: TODO 주석 및 "임시 초기값", "시뮬레이션" 관련 주석 제거
+2025-07-19T21:34: solomon/src/bin/analyze_high_break.rs: 테스트용 하드코딩 데이터 제거 (실행 시 panic 발생)
+2025-07-19T21:49: solomon/Cargo.toml: log, env_logger 의존성 추가 (analyze_high_break.rs 컴파일 오류 해결)
+2025-01-19 17:15:00: stockrs/src/apis/db_api.rs: 거래대금 계산 로깅 강화 (처음 5개 종목 상세 분석, 카테고리별 카운터, 상세 진행률 추가)
+2025-01-19 17:16:00: stockrs/src/apis/db_api.rs: borrow of moved value 에러 수정 (stock_code.clone() 사용)
+2025-01-19 17:17:00: stockrs/src/apis/db_api.rs: 테이블 스키마 확인 로깅 추가 (PRAGMA table_info, 샘플 데이터 출력)
+2025-01-19 17:18:00: stockrs/src/apis/db_api.rs: column_count 에러 수정 및 stock_prices 테이블 제외 (실제 종목 테이블만 사용)
+2025-01-19 17:19:00: stockrs/src/apis/db_api.rs: 코드 정리 (불필요한 로깅 제거, 핵심 기능만 유지)
+2025-01-19 17:20:00: stockrs/src/apis/db_api.rs: predict_top_stocks.rs 구현을 그대로 적용 (검증된 로직 사용)
+2024-12-19 15:30:00: stockrs/src/runner.rs: 장 종료 후 대기 모드 로그 메시지를 주석으로 변경
+2024-12-19 15:30:00: stockrs/src/apis/db_api.rs: 백테스팅용 현재가 조회 로직을 1분봉 DB 사용하도록 수정 (get_current_price_from_db, get_current_price_from_db_latest 함수)
+2024-12-19 15:30:00: stockrs/src/runner.rs: 새로운 거래일 시작 시 날짜 로깅 추가 (📅 새로운 거래일 시작, 🔄 객체 리셋 시작, ✅ 리셋 완료)
+
+2025-07-20T05:50: data/market_close_day_2024.txt: 1월 2일 공휴일 제거 (실제로는 거래일이므로)
+2025-07-20T05:50: stockrs/src/time.rs: next_trading_day 함수에 디버깅 로그 추가하여 1월 3일, 1월 4일 건너뛰기 문제 진단
+2025-07-20T05:50: stockrs/src/time.rs: 디버깅 로그 제거 - 문제 해결 완료 (1월 2일이 잘못 공휴일로 등록되어 1월 3일, 1월 4일이 건너뛰어졌던 문제)
+2025-07-20T06:15: stockrs/src/runner.rs: wait_until_next_event에서 공휴일/주말 체크와 Overnight 신호 처리를 통합 (중복 skip_to_next_trading_day 호출 문제 해결)
+
+2024-12-19 15:30:00: stockrs/src/model.rs: fallback 처리 제거하고 에러 발생하도록 수정 (사용자 규칙 준수)
+2024-12-19 15:35:00: stockrs/src/model.rs: InvalidOperation 에러 타입을 UnsupportedFeature로 수정 (컴파일 에러 해결)
+
+2025-07-20 09:36: stockrs/src/apis/backtest_api.rs: 백테스팅 전용 API 모듈 생성 (잔고 관리 및 주문 시뮬레이션 전담)
+2025-07-20 09:36: stockrs/src/apis.rs: backtest_api 모듈 export 추가
+2025-07-20 09:36: stockrs/src/apis/db_api.rs: 잔고 관리 로직 제거, 데이터 조회 전담으로 리팩토링
+2025-07-20 09:36: stockrs/src/broker.rs: get_api 메서드 추가 (BacktestApi 접근용)
+2025-07-20 09:36: stockrs/src/runner.rs: 백테스팅 모드에서 BacktestApi 사용하도록 수정
+2025-07-20 09:36: stockrs/src/model.rs: ApiBundle에 backtest_api 필드 추가, get_balance 메서드 구현
+2025-07-20 09:36: stockrs/src/model/joonwoo.rs: apis.get_balance() 사용하도록 수정
+2025-07-20 09:36: TODO.md: 백테스팅 아키텍처 리팩토링 작업 추가
+2025-07-20 09:36: TASK.md: 백테스팅 아키텍처 리팩토링 태스크 추가
+
+2025-07-21 05:21:24: TODO.md: 프로젝트 개선 계획 체계적 정리 (백테스팅 시스템, 시간 처리, DBManager, 코드 구조, 시스템 인프라, 예측 모델, 실전/모의투자, 기술 연구, UI, 보안/안정성)
+2025-07-21 05:22:23: TODO.md: 사용자 제시 문제점 중심으로 재구성 (DBManager 로직, 시간 처리, 코드 구조 개선)
+2025-07-21 05:24:41: TASK.md: DBManager 로직 수정 태스크 4개 구체적 작성 (시간 포맷 수정, 쿼리 바인딩, fallback 로직, 전체 경로 수정)
+2025-07-21 06:02:28: TASK.md: TODO.md의 시간 처리 로직 개선 항목들을 상세한 TASK 형식으로 작성 (하드코딩된 시장 시간 상수 분리, now() 호출 일관성, 주말·공휴일 체크 모듈화, 시간 에러 처리 일관성, Duration 연산 중복 제거)
+2024-12-19 15:30:00: TODO.md: BacktestApi current_time 필드 제거 항목 추가 (시간 관리 중복 해결)
+2024-12-19 15:30:00: TODO.md: ONNX 모델 정합성 확인 섹션 추가 (solomon 프로젝트 재검토 포함)

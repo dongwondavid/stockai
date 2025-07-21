@@ -100,27 +100,27 @@ pub enum OrderClass {
     /// 장중대량(즉시체결, 잔량취소)
     MidMarketMassive = 51,
 }
-impl Into<String> for OrderClass {
-    fn into(self) -> String {
-        match self {
-            Self::Limit => "00".to_string(),
-            Self::Market => "01".to_string(),
-            Self::ConditionalLimit => "02".to_string(),
-            Self::Best => "03".to_string(),
-            Self::First => "04".to_string(),
-            Self::PreMarket => "05".to_string(),
-            Self::PostMarket => "06".to_string(),
-            Self::OutMarketSinglePrice => "07".to_string(),
-            Self::MyStock => "08".to_string(),
-            Self::MyStockSOption => "09".to_string(),
-            Self::MyStockMoneyTrust => "10".to_string(),
-            Self::IOCLimit => "11".to_string(),
-            Self::FOKLimit => "12".to_string(),
-            Self::IOCMarket => "13".to_string(),
-            Self::FOKMarket => "14".to_string(),
-            Self::IOCBest => "15".to_string(),
-            Self::FOKBest => "16".to_string(),
-            Self::MidMarketMassive => "51".to_string(),
+impl From<OrderClass> for String {
+    fn from(val: OrderClass) -> Self {
+        match val {
+            OrderClass::Limit => "00".to_string(),
+            OrderClass::Market => "01".to_string(),
+            OrderClass::ConditionalLimit => "02".to_string(),
+            OrderClass::Best => "03".to_string(),
+            OrderClass::First => "04".to_string(),
+            OrderClass::PreMarket => "05".to_string(),
+            OrderClass::PostMarket => "06".to_string(),
+            OrderClass::OutMarketSinglePrice => "07".to_string(),
+            OrderClass::MyStock => "08".to_string(),
+            OrderClass::MyStockSOption => "09".to_string(),
+            OrderClass::MyStockMoneyTrust => "10".to_string(),
+            OrderClass::IOCLimit => "11".to_string(),
+            OrderClass::FOKLimit => "12".to_string(),
+            OrderClass::IOCMarket => "13".to_string(),
+            OrderClass::FOKMarket => "14".to_string(),
+            OrderClass::IOCBest => "15".to_string(),
+            OrderClass::FOKBest => "16".to_string(),
+            OrderClass::MidMarketMassive => "51".to_string(),
         }
     }
 }
@@ -145,7 +145,10 @@ impl From<&str> for OrderClass {
             "15" => OrderClass::IOCBest,
             "16" => OrderClass::FOKBest,
             "51" => OrderClass::MidMarketMassive,
-            _ => todo!(),
+            _ => {
+                eprintln!("Unsupported OrderClass: {}", s);
+                OrderClass::Limit // 기본값으로 지정가 사용
+            }
         }
     }
 }
@@ -157,12 +160,12 @@ pub enum CorrectionClass {
     Correction = 1,
     Cancel = 2,
 }
-impl Into<String> for CorrectionClass {
-    fn into(self) -> String {
-        match self {
-            Self::None => "0",
-            Self::Correction => "01",
-            Self::Cancel => "02",
+impl From<CorrectionClass> for String {
+    fn from(val: CorrectionClass) -> Self {
+        match val {
+            CorrectionClass::None => "0",
+            CorrectionClass::Correction => "01",
+            CorrectionClass::Cancel => "02",
         }
         .to_string()
     }
@@ -173,7 +176,10 @@ impl From<&str> for CorrectionClass {
             "0" => CorrectionClass::None,
             "01" => CorrectionClass::Correction,
             "02" => CorrectionClass::Cancel,
-            _ => todo!(),
+            _ => {
+                eprintln!("Unsupported CorrectionClass: {}", s);
+                CorrectionClass::None // 기본값으로 None 사용
+            }
         }
     }
 }
@@ -206,9 +212,9 @@ impl Quantity {
         Self { inner: quantity }
     }
 }
-impl Into<String> for Quantity {
-    fn into(self) -> String {
-        format!("{}", self.inner)
+impl From<Quantity> for String {
+    fn from(val: Quantity) -> Self {
+        format!("{}", val.inner)
     }
 }
 impl From<&str> for Quantity {
@@ -228,9 +234,9 @@ impl Price {
         Self { inner: price }
     }
 }
-impl Into<String> for Price {
-    fn into(self) -> String {
-        format!("{}", self.inner)
+impl From<Price> for String {
+    fn from(val: Price) -> Self {
+        format!("{}", val.inner)
     }
 }
 impl From<&str> for Price {
@@ -288,9 +294,9 @@ pub enum TrId {
     #[serde(rename = "PINGPONG")]
     PingPong,
 }
-impl Into<String> for TrId {
-    fn into(self) -> String {
-        match self {
+impl From<TrId> for String {
+    fn from(val: TrId) -> Self {
+        match val {
             // Order
             TrId::RealStockCashBidOrder => "TTTC0802U",
             TrId::RealStockCashAskOrder => "TTTC0801U",
@@ -349,7 +355,10 @@ impl From<&str> for TrId {
             "VTTC8908R" => TrId::VirtualStockInquirePsblOrder,
             // PingPong
             "PINGPONG" => TrId::PingPong,
-            _ => todo!(),
+            _ => {
+                eprintln!("Unsupported TrId: {}", s);
+                TrId::PingPong // 기본값으로 PingPong 사용
+            }
         }
     }
 }
@@ -361,9 +370,9 @@ pub enum CustomerType {
     #[serde(rename = "P")]
     Personal,
 }
-impl Into<String> for CustomerType {
-    fn into(self) -> String {
-        match self {
+impl From<CustomerType> for String {
+    fn from(val: CustomerType) -> Self {
+        match val {
             CustomerType::Business => "B",
             CustomerType::Personal => "P",
         }

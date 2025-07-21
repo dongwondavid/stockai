@@ -36,7 +36,10 @@ impl StreamParser<Body> for Ordb {
                 datetime: time.clone(),
             };
             let body = if encrypted {
-                None // TODO
+                return Err(Error::BrokenProtocol(
+                    "ordb.rs",
+                    "Encrypted data not supported".to_string(),
+                ));
             } else {
                 let ask_price = {
                     let mut result = [0u32; 10];

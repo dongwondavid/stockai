@@ -21,7 +21,7 @@ impl Time {
         }
     }
     pub fn inner(&self) -> DateTime<chrono_tz::Tz> {
-        self.0.clone()
+        self.0
     }
     pub fn date(&self) -> String {
         format!("{}", self.0.format("%Y%m%d"))

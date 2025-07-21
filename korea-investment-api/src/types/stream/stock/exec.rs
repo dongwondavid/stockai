@@ -39,7 +39,10 @@ impl StreamParser<Body> for Exec {
                 datetime: exec_time.clone(),
             };
             let body = if encrypted {
-                None // TODO
+                return Err(Error::BrokenProtocol(
+                    "exec.rs",
+                    "Encrypted data not supported".to_string(),
+                ));
             } else {
                 Some(Body {
                     shortcode: header_str[3].to_string(),
@@ -99,7 +102,7 @@ impl StreamParser<Body> for Exec {
                     yesterday_symmetric_time_accumulate_volume_rate: splits[42].parse()?,
                     time_class_code: splits[43].into(),
                     market_termination_class_code: splits[44].into(),
-                    vi_standard_price: splits[45].parse().unwrap_or_else(|_| 0),
+                    vi_standard_price: splits[45].parse().unwrap_or(0),
                 })
             };
             Ok(Self { header, body })

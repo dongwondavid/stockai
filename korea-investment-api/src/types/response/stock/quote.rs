@@ -6,7 +6,8 @@ pub type VolumeRankResponse = QuoteResponse<Vec<output::VolumeRank>, (), ()>;
 pub type GroupListResponse = QuoteResponse<Vec<output::GroupList>, (), Vec<output::GroupList>>;
 pub type GroupItemResponse = QuoteResponse<(), output::GroupInfo, Vec<output::GroupItem>>;
 pub type BasicStockInfoResponse = QuoteResponse<output::BasicStockInfo, (), ()>;
-pub type MinutePriceChartResponse = QuoteResponse<(), output::MinutePriceChartOutput1, Vec<output::MinutePriceChartOutput2>>;
+pub type MinutePriceChartResponse =
+    QuoteResponse<(), output::MinutePriceChartOutput1, Vec<output::MinutePriceChartOutput2>>;
 
 #[derive(Clone, Debug, Deserialize, Getters)]
 pub struct QuoteResponse<A, B, C> {

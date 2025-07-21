@@ -1,14 +1,14 @@
+use rusqlite::Connection;
+use solomon::SectorManager;
 use std::env;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use log::{info, error};
-use rusqlite::Connection;
-use solomon::SectorManager;
+use tracing::{error, info};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 로깅 설정
-    env_logger::init();
+    solomon::init_tracing();
 
     // 명령행 인수 파싱
     let args: Vec<String> = env::args().collect();
@@ -79,46 +79,58 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn save_missing_stocks(missing_stocks: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut file = File::create("missing_stocks.txt")?;
-    writeln!(file, "CSV에 있지만 DB에 없는 종목들 (총 {}개)", missing_stocks.len())?;
+    writeln!(
+        file,
+        "CSV에 있지만 DB에 없는 종목들 (총 {}개)",
+        missing_stocks.len()
+    )?;
     writeln!(file, "=")?;
-    
+
     for stock_code in missing_stocks {
         writeln!(file, "{}", stock_code)?;
     }
-    
+
     info!("missing_stocks.txt 파일 생성 완료");
     Ok(())
 }
 
 fn save_extra_stocks(extra_stocks: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut file = File::create("extra_stocks.txt")?;
-    writeln!(file, "DB에만 있고 CSV에는 없는 종목들 (총 {}개)", extra_stocks.len())?;
+    writeln!(
+        file,
+        "DB에만 있고 CSV에는 없는 종목들 (총 {}개)",
+        extra_stocks.len()
+    )?;
     writeln!(file, "=")?;
-    
+
     for stock_code in extra_stocks {
         writeln!(file, "{}", stock_code)?;
     }
-    
+
     info!("extra_stocks.txt 파일 생성 완료");
     Ok(())
 }
 
 fn save_comparison_summary(
-    db_tables: &[String], 
+    db_tables: &[String],
     sector_manager: &SectorManager,
     missing_stocks: &[String],
-    extra_stocks: &[String]
+    extra_stocks: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut file = File::create("comparison_summary.txt")?;
-    
+
     writeln!(file, "종목 비교 분석 요약")?;
     writeln!(file, "=")?;
     writeln!(file, "DB 종목 테이블 수: {}", db_tables.len())?;
-    writeln!(file, "CSV 종목 수: {}", sector_manager.get_csv_stock_count())?;
+    writeln!(
+        file,
+        "CSV 종목 수: {}",
+        sector_manager.get_csv_stock_count()
+    )?;
     writeln!(file, "CSV에만 있는 종목: {}개", missing_stocks.len())?;
     writeln!(file, "DB에만 있는 종목: {}개", extra_stocks.len())?;
     writeln!(file)?;
-    
+
     writeln!(file, "DB 테이블 목록 (처음 20개):")?;
     for (i, table) in db_tables.iter().take(20).enumerate() {
         writeln!(file, "{:2}. {}", i + 1, table)?;
@@ -127,7 +139,7 @@ fn save_comparison_summary(
         writeln!(file, "... (총 {}개)", db_tables.len())?;
     }
     writeln!(file)?;
-    
+
     writeln!(file, "CSV 종목 목록 (처음 20개):")?;
     let csv_codes = sector_manager.get_csv_stock_codes_limit(20);
     for (i, code) in csv_codes.iter().enumerate() {
@@ -136,7 +148,7 @@ fn save_comparison_summary(
     if sector_manager.get_csv_stock_count() > 20 {
         writeln!(file, "... (총 {}개)", sector_manager.get_csv_stock_count())?;
     }
-    
+
     info!("comparison_summary.txt 파일 생성 완료");
     Ok(())
-} 
+}

@@ -132,4 +132,4 @@ pub struct Output2 {
     asst_icdc_amt: String,
     #[getset(get = "pub")]
     asst_icdc_erng_rt: String,
-} 
+}

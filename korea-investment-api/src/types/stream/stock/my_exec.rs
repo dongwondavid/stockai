@@ -65,7 +65,7 @@ impl MyExec {
                 cust_id: splits[0].to_string(),
                 acnt_no: splits[1].to_string(),
                 order_no: splits[2].parse()?,
-                origin_order_no: splits[3].parse().unwrap_or_else(|_| 0u64),
+                origin_order_no: splits[3].parse().unwrap_or(0u64),
                 ask_bid_class: splits[4].into(),
                 correction_class: splits[5].into(),
                 order_kind: splits[6].into(),
@@ -82,10 +82,7 @@ impl MyExec {
                 account_name: splits[17].to_string(),
                 stock_name: splits[18].to_string(),
                 credit_class: splits[19].to_string(),
-                credit_loan_date: match Time::parse(splits[20], "%Y%m%d") {
-                    Ok(d) => Some(d),
-                    Err(_) => None,
-                },
+                credit_loan_date: Time::parse(splits[20], "%Y%m%d").ok(),
                 stock_name_40: splits[21].to_string(),
             });
             Ok(Self { header, body })
