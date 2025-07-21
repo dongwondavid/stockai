@@ -50,7 +50,7 @@ fn main() {
     let mut date_results = Vec::new();
     let mut total_analyzed_stocks = 0;
 
-    for (_index, &date_num) in date_list.iter().enumerate() {
+    for &date_num in date_list.iter() {
         // 날짜 형식 변환 (YYYYMMDD -> NaiveDate)
         let year = (date_num / 10000) as i32;
         let month = ((date_num % 10000) / 100) as u32;
@@ -173,13 +173,7 @@ fn get_top_volume_stocks_optimized(
     // 3. 상위 30개 중에서 제외 목록에 있는 종목은 건너뛰기
     let filtered_stocks: Vec<String> = top_30_stocks
         .into_iter()
-        .filter(|stock_code| {
-            if excluded_stocks.contains(stock_code) {
-                false
-            } else {
-                true
-            }
-        })
+        .filter(|stock_code| !excluded_stocks.contains(stock_code))
         .collect();
 
     // 4. 필터링된 종목들에 대해 상승률과 MDD 계산

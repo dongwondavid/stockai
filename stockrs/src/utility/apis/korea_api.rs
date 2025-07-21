@@ -1,7 +1,9 @@
-use crate::errors::{StockrsError, StockrsResult};
-use crate::types::api::StockApi;
-use crate::types::broker::Order;
-use crate::types::trading::AssetInfo;
+use crate::utility::errors::{StockrsError, StockrsResult};
+use crate::utility::types::api::StockApi;
+use crate::utility::types::broker::Order;
+use crate::utility::types::trading::AssetInfo;
+use crate::utility::config;
+
 use std::any::Any;
 use std::rc::Rc;
 
@@ -35,7 +37,7 @@ impl KoreaApi {
     }
 
     async fn new(mode: ApiMode) -> StockrsResult<Self> {
-        let config = crate::config::get_config()?;
+        let config = config::get_config()?;
 
         let account = korea_investment_api::types::Account {
             cano: match mode {
@@ -117,9 +119,9 @@ impl StockApi for KoreaApi {
 
         rt.block_on(async {
             // Order 구조체를 korea-investment-api 파라미터로 변환
-            let direction = match order.side {
-                crate::types::broker::OrderSide::Buy => korea_investment_api::types::Direction::Bid,
-                crate::types::broker::OrderSide::Sell => {
+            let direction =             match order.side {
+                crate::utility::types::broker::OrderSide::Buy => korea_investment_api::types::Direction::Bid,
+                crate::utility::types::broker::OrderSide::Sell => {
                     korea_investment_api::types::Direction::Ask
                 }
             };
@@ -141,8 +143,8 @@ impl StockApi for KoreaApi {
                 .ok_or_else(|| {
                     StockrsError::order_execution(
                         match order.side {
-                            crate::types::broker::OrderSide::Buy => "매수",
-                            crate::types::broker::OrderSide::Sell => "매도",
+                            crate::utility::types::broker::OrderSide::Buy => "매수",
+                            crate::utility::types::broker::OrderSide::Sell => "매도",
                         },
                         &order.stockcode,
                         order.quantity,
@@ -156,8 +158,8 @@ impl StockApi for KoreaApi {
                 "📈 [KoreaApi:{}] 주문 실행: {} {} {}주 -> 주문번호: {}",
                 self.mode_name(),
                 order.stockcode,
-                match order.side {
-                    crate::types::broker::OrderSide::Buy => "매수",
+                                    match order.side {
+                        crate::utility::types::broker::OrderSide::Buy => "매도",
                     _ => "매도",
                 },
                 order.quantity,

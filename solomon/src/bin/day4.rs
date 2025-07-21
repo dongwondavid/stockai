@@ -73,7 +73,7 @@ fn main() {
     for stock_info in stock_list {
         date_groups
             .entry(stock_info.date)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(stock_info);
     }
 

@@ -1,4 +1,4 @@
-use crate::errors::{StockrsError, StockrsResult};
+use crate::utility::errors::{StockrsError, StockrsResult};
 use rusqlite::Connection;
 use tracing::debug;
 

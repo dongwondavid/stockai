@@ -58,8 +58,10 @@ pub struct TradingResultBuilder {
 impl Default for TradingResultParams {
     fn default() -> Self {
         Self {
-            date: NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-            time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            date: NaiveDate::from_ymd_opt(2024, 1, 1)
+                .expect("Invalid default date"),
+            time: NaiveTime::from_hms_opt(9, 0, 0)
+                .expect("Invalid default time"),
             stockcode: String::new(),
             buy_or_sell: false,
             quantity: 0,

@@ -1,5 +1,5 @@
 use super::utils::get_morning_data;
-use crate::errors::StockrsResult;
+use crate::utility::errors::{StockrsError, StockrsResult};
 use chrono::{Duration, NaiveDate};
 use rusqlite::Connection;
 use tracing::debug;
@@ -38,17 +38,17 @@ pub fn calculate_breaks_6month_high(
 ) -> StockrsResult<f64> {
     // 날짜 파싱 (YYYYMMDD 형식)
     let year = date[..4].parse::<i32>().map_err(|_| {
-        crate::errors::StockrsError::prediction(format!("잘못된 연도 형식: {}", date))
+        StockrsError::prediction(format!("잘못된 연도 형식: {}", date))
     })?;
     let month = date[4..6].parse::<u32>().map_err(|_| {
-        crate::errors::StockrsError::prediction(format!("잘못된 월 형식: {}", date))
+        StockrsError::prediction(format!("잘못된 월 형식: {}", date))
     })?;
     let day = date[6..8].parse::<u32>().map_err(|_| {
-        crate::errors::StockrsError::prediction(format!("잘못된 일 형식: {}", date))
+        StockrsError::prediction(format!("잘못된 일 형식: {}", date))
     })?;
 
     let target_date = NaiveDate::from_ymd_opt(year, month, day).ok_or_else(|| {
-        crate::errors::StockrsError::prediction(format!("잘못된 날짜 형식: {}", date))
+        StockrsError::prediction(format!("잘못된 날짜 형식: {}", date))
     })?;
 
     // 6개월 전 날짜 계산 (주식 시장이 열린 날 기준으로 근사)
@@ -74,14 +74,14 @@ pub fn calculate_breaks_6month_high(
             |row| row.get(0),
         )
         .map_err(|_| {
-            crate::errors::StockrsError::database_query(format!(
+            StockrsError::database_query(format!(
                 "테이블 데이터 개수 확인 실패: {}",
                 table_name
             ))
         })?;
 
     if table_count == 0 {
-        return Err(crate::errors::StockrsError::database_query(format!(
+        return Err(StockrsError::database_query(format!(
             "테이블 {}에 데이터가 없습니다.",
             table_name
         )));
@@ -98,14 +98,14 @@ pub fn calculate_breaks_6month_high(
             |row| row.get(0),
         )
         .map_err(|_| {
-            crate::errors::StockrsError::database_query(format!(
+            StockrsError::database_query(format!(
                 "6개월 내 데이터 개수 확인 실패: {} (범위: {} ~ {})",
                 table_name, six_months_ago_str, target_date_str
             ))
         })?;
 
     if six_month_data_count == 0 {
-        return Err(crate::errors::StockrsError::database_query(format!(
+        return Err(StockrsError::database_query(format!(
             "6개월 내 데이터가 없습니다. 날짜 범위: {} ~ {} (테이블: {})",
             six_months_ago_str, target_date_str, table_name
         )));
@@ -122,7 +122,7 @@ pub fn calculate_breaks_6month_high(
     )?;
 
     if six_month_high <= 0.0 {
-        return Err(crate::errors::StockrsError::prediction(format!(
+        return Err(StockrsError::prediction(format!(
             "6개월 내 최고가가 유효하지 않습니다: {:.2}",
             six_month_high
         )));
@@ -136,14 +136,14 @@ pub fn calculate_breaks_6month_high(
             |row| row.get(0),
         )
         .map_err(|_| {
-            crate::errors::StockrsError::database_query(format!(
+            StockrsError::database_query(format!(
                 "당일 데이터 존재 여부 확인 실패: {} (날짜: {})",
                 table_name, target_date_str
             ))
         })?;
 
     if today_data_exists == 0 {
-        return Err(crate::errors::StockrsError::database_query(format!(
+        return Err(StockrsError::database_query(format!(
             "당일 데이터가 없습니다. 날짜: {} (테이블: {})",
             target_date_str, table_name
         )));
@@ -157,7 +157,7 @@ pub fn calculate_breaks_6month_high(
     )?;
 
     if today_high <= 0.0 {
-        return Err(crate::errors::StockrsError::prediction(format!(
+        return Err(StockrsError::prediction(format!(
             "당일 고가가 유효하지 않습니다: {:.2}",
             today_high
         )));

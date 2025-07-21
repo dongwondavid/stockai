@@ -71,7 +71,7 @@ fn main() {
     for stock_info in stock_list {
         date_groups
             .entry(stock_info.date)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(stock_info);
     }
 
@@ -406,7 +406,7 @@ fn calculate_volume_ratio_optimized(
     sector_manager: &SectorManager,
     cache: &Arc<Mutex<Cache>>,
 ) -> Result<f64> {
-    let cache_key = format!("{}", stock_code);
+    let cache_key = stock_code.to_string();
 
     // 캐시 확인
     {

@@ -2,7 +2,7 @@ use chrono::{NaiveDate, Weekday, Datelike};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use crate::errors::{StockrsError, StockrsResult};
+use crate::utility::errors::{StockrsError, StockrsResult};
 
 
 
@@ -18,7 +18,7 @@ pub struct HolidayChecker {
 impl HolidayChecker {
     /// 새로운 HolidayChecker 인스턴스를 생성합니다.
     pub fn new() -> StockrsResult<Self> {
-        let file_path_template = if let Ok(config) = crate::config::get_config() {
+        let file_path_template = if let Ok(config) = crate::utility::config::get_config() {
             config.time_management.market_close_file_path.clone()
         } else {
             "data/market_close_day_{}.txt".to_string()
@@ -167,15 +167,18 @@ mod tests {
         let checker = HolidayChecker::default();
         
         // 2025년 1월 25일은 토요일
-        let saturday = NaiveDate::from_ymd_opt(2025, 1, 25).unwrap();
+        let saturday = NaiveDate::from_ymd_opt(2025, 1, 25)
+            .expect("Invalid test date");
         assert!(checker.is_weekend(saturday));
         
         // 2025년 1월 26일은 일요일
-        let sunday = NaiveDate::from_ymd_opt(2025, 1, 26).unwrap();
+        let sunday = NaiveDate::from_ymd_opt(2025, 1, 26)
+            .expect("Invalid test date");
         assert!(checker.is_weekend(sunday));
         
         // 2025년 1월 27일은 월요일 (공휴일이지만 주말은 아님)
-        let monday = NaiveDate::from_ymd_opt(2025, 1, 27).unwrap();
+        let monday = NaiveDate::from_ymd_opt(2025, 1, 27)
+            .expect("Invalid test date");
         assert!(!checker.is_weekend(monday));
     }
 
@@ -185,9 +188,11 @@ mod tests {
         
         // 2025년 1월 25일(토요일) 다음 거래일은 1월 31일(금요일)이어야 함
         // (1월 27일, 28일, 29일, 30일이 모두 공휴일이므로)
-        let saturday = NaiveDate::from_ymd_opt(2025, 1, 25).unwrap();
+        let saturday = NaiveDate::from_ymd_opt(2025, 1, 25)
+            .expect("Invalid test date");
         let next_day = checker.next_trading_day(saturday);
-        assert_eq!(next_day, NaiveDate::from_ymd_opt(2025, 1, 31).unwrap());
+        assert_eq!(next_day, NaiveDate::from_ymd_opt(2025, 1, 31)
+            .expect("Invalid expected date"));
     }
 
     #[test]
@@ -195,8 +200,10 @@ mod tests {
         let mut checker = HolidayChecker::default();
         
         // 2025년 1월 31일(금요일) 이전 거래일은 1월 24일(금요일)이어야 함
-        let friday = NaiveDate::from_ymd_opt(2025, 1, 31).unwrap();
+        let friday = NaiveDate::from_ymd_opt(2025, 1, 31)
+            .expect("Invalid test date");
         let prev_day = checker.previous_trading_day(friday);
-        assert_eq!(prev_day, NaiveDate::from_ymd_opt(2025, 1, 24).unwrap());
+        assert_eq!(prev_day, NaiveDate::from_ymd_opt(2025, 1, 24)
+            .expect("Invalid expected date"));
     }
 } 

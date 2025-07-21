@@ -1,8 +1,8 @@
-use crate::config::get_config;
+use crate::utility::config::get_config;
 use crate::db_manager::DBManager;
-use crate::types::api::SharedApi;
-use crate::types::broker::{Broker, Order};
-use crate::types::trading::TradingMode;
+use crate::utility::types::api::SharedApi;
+use crate::utility::types::broker::{Broker, Order};
+use crate::utility::types::trading::TradingMode;
 use std::error::Error;
 use tracing::{debug, error, info, warn};
 

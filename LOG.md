@@ -1,5 +1,25 @@
 # 📝 변경 이력 로그
 
+2024-12-19T15:30: stockrs/src/utility/types/macros.rs: unwrap() 사용을 expect()로 개선 - LocalResult.single() 메서드 사용하여 안전한 시간 변환 구현
+2024-12-19T15:30: stockrs/src/utility/types/trading.rs: unwrap() 사용을 expect()로 개선 - Default 구현에서 안전한 날짜/시간 생성
+2024-12-19T15:30: stockrs/src/utility/holiday_checker.rs: 테스트 코드 unwrap() 사용을 expect()로 개선 - 모든 테스트에서 안전한 날짜 생성
+2024-12-19T15:30: stockrs/src/time.rs: 테스트 코드 unwrap() 사용을 expect()로 개선 - LocalResult.single() 메서드 사용하여 안전한 시간 변환
+2024-12-19T15:30: stockrs/src/utility/errors.rs: 테스트 코드 unwrap() 사용을 expect()로 개선 - 안전한 결과 처리
+2024-12-19T15:30: stockrs/src/time.rs: 불필요한 변수 할당 제거 - update_cache 메서드에서 중간 변수 제거, compute_next_time 메서드에서 불필요한 변수 할당 제거
+2024-12-19T15:30: stockrs/src/time.rs: wait_until 메서드 불필요한 변수 할당 제거 - Local::now() 직접 사용으로 최적화
+2024-12-19T15:30: TASK.md: stockrs Clippy 경고 해결 및 코드 품질 개선 작업 완료 표시 - 모든 clippy 경고 해결, 코드 품질 개선 완료
+2024-12-19T15:30: COMPLETE.md: stockrs Clippy 경고 해결 및 코드 품질 개선 작업 추가 - 완료된 작업 목록에 추가
+2024-12-19T15:35: TODO.md: TASK.md 완료 내용 반영 - Clippy 경고 해결 작업 완료 표시, 코드 품질 개선 항목 업데이트
+
+2025-07-21T13:45: TODO.md: korea-investment-api와 solomon 프로젝트 관련 항목 제거 (stockrs 프로젝트에만 집중)
+2025-07-21T13:45: TASK.md: stockrs 프로젝트 Clippy 경고 해결 작업으로 범위 축소 (1개 경고만 해결)
+
+2025-07-21T13:38: TODO.md: 시간 처리 로직 개선 완료 항목 체크 (8개 항목 완료)
+2025-07-21T13:38: TASK.md: Clippy 경고 해결 작업 세부 조건 추가 (21개 경고 분석)
+2025-07-21T13:38: COMPLETE.md: TODO/TASK 상태 업데이트 완료 작업 추가
+
+2025-07-21T09:00: stockrs/src/: 파일 구조 변경으로 인한 import 경로 수정 완료 - 모든 파일에서 crate::errors, crate::apis, crate::config, crate::types, crate::holiday_checker를 crate::utility::* 경로로 수정, day1~day4 prediction 파일들에서 use 구문을 사용하여 StockrsError 간소화, main.rs import 경로 수정, local_time 매크로 import 추가, 사용하지 않는 import 제거로 경고 해결
+
 2025-07-21T08:20: config.example.toml: joonwoo 모델 전용 설정 섹션 추가 - 손절매/익절매/추가손절매 비율, 매수/강제정리 시간, 자산비율 설정 추가
 2025-07-21T08:20: stockrs/src/config.rs: JoonwooConfig 구조체 추가 - joonwoo 모델 설정을 위한 새로운 구조체 정의, Config 구조체에 joonwoo 필드 추가, 유효성 검증 로직 추가
 2025-07-21T08:20: stockrs/src/model/joonwoo.rs: 설정 기반 동작으로 변경 - 하드코딩된 값들을 config에서 로드하도록 수정, 시간 파싱 함수 추가, 설정값을 활용한 동적 시간 체크 로직 구현
@@ -218,3 +238,12 @@
 2025-07-21 06:02:28: TASK.md: TODO.md의 시간 처리 로직 개선 항목들을 상세한 TASK 형식으로 작성 (하드코딩된 시장 시간 상수 분리, now() 호출 일관성, 주말·공휴일 체크 모듈화, 시간 에러 처리 일관성, Duration 연산 중복 제거)
 2024-12-19 15:30:00: TODO.md: BacktestApi current_time 필드 제거 항목 추가 (시간 관리 중복 해결)
 2024-12-19 15:30:00: TODO.md: ONNX 모델 정합성 확인 섹션 추가 (solomon 프로젝트 재검토 포함)
+2025-07-21 12:12:37: 프로젝트: 파일 구조 변경 리팩토링 완료 (stockrs/src/utility/apis/, stockrs/src/utility/types/, stockrs/src/model/onnx_predictor/features/ 구조로 모듈화)
+
+2024-12-19 15:30: stockrs/src/utility/types.rs: 모듈 에러 확인 및 해결 - 실제로는 IDE 일시적 문제였음
+2024-12-19 15:30: solomon/src/bin/analyze_high_break.rs: 불필요한 mut 키워드 제거
+2024-12-19 15:30: solomon/src/bin/analyze_foreign_ratio.rs: 불필요한 mut 키워드 제거
+2024-12-19 15:30: 전체 프로젝트 빌드 성공 - 모든 에러 및 경고 해결 완료
+
+2025-07-20T05:30: stockrs/src/lib.rs: init_tracing 함수 제거 - 애플리케이션 초기화 함수를 lib.rs에서 main.rs로 이동
+2025-07-20T05:30: stockrs/src/main.rs: init_tracing 함수 추가 - 라이브러리 API가 아닌 애플리케이션 초기화 함수를 main.rs에 배치

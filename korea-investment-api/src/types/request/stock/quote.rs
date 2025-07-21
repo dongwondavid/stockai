@@ -63,14 +63,14 @@ impl DailyPriceParameter {
         [
             (
                 "FID_COND_MRKT_DIV_CODE",
-                format!("{}", self.fid_cond_mrkt_div_code),
+                self.fid_cond_mrkt_div_code.to_string(),
             ),
             ("FID_INPUT_ISCD", self.fid_input_iscd.clone()),
             (
                 "FID_PERIOD_DIV_CODE",
-                format!("{}", self.fid_period_div_code),
+                self.fid_period_div_code.to_string(),
             ),
-            ("FID_ORG_ADJ_PRC", format!("{}", self.fid_org_adj_prc)),
+            ("FID_ORG_ADJ_PRC", self.fid_org_adj_prc.to_string()),
         ]
     }
 }
@@ -148,20 +148,20 @@ impl VolumeRankParameter {
             ),
             (
                 "FID_COND_SCR_DIV_CODE",
-                format!("{}", self.fid_cond_scr_div_code),
+                self.fid_cond_scr_div_code.to_string(),
             ),
-            ("FID_INPUT_ISCD", format!("{}", self.fid_input_iscd)),
-            ("FID_DIV_CLS_CODE", format!("{}", self.fid_div_cls_code)),
-            ("FID_BLNG_CLS_CODE", format!("{}", self.fid_blng_cls_code)),
-            ("FID_TRGT_CLS_CODE", format!("{}", self.fid_trgt_cls_code)),
+            ("FID_INPUT_ISCD", self.fid_input_iscd.to_string()),
+            ("FID_DIV_CLS_CODE", self.fid_div_cls_code.to_string()),
+            ("FID_BLNG_CLS_CODE", self.fid_blng_cls_code.to_string()),
+            ("FID_TRGT_CLS_CODE", self.fid_trgt_cls_code.to_string()),
             (
                 "FID_TRGT_EXLS_CLS_CODE",
-                format!("{}", self.fid_trgt_exls_cls_code),
+                self.fid_trgt_exls_cls_code.to_string(),
             ),
             (
                 "FID_INPUT_PRICE_1",
                 if let Some(price) = self.fid_input_price_1 {
-                    format!("{}", price.inner)
+                    price.inner.to_string()
                 } else {
                     "".to_string()
                 },
@@ -169,7 +169,7 @@ impl VolumeRankParameter {
             (
                 "FID_INPUT_PRICE_2",
                 if let Some(price) = self.fid_input_price_2 {
-                    format!("{}", price.inner)
+                    price.inner.to_string()
                 } else {
                     "".to_string()
                 },
@@ -182,7 +182,7 @@ impl VolumeRankParameter {
                     "".to_string()
                 },
             ),
-            ("FID_INPUT_DATE_1", format!("{}", self.fid_input_date_1)),
+            ("FID_INPUT_DATE_1", self.fid_input_date_1.to_string()),
         ]
     }
 }

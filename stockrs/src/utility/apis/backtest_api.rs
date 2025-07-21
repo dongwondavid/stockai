@@ -3,12 +3,13 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
-use crate::config::get_config;
-use crate::errors::{StockrsError, StockrsResult};
+use crate::utility::config::get_config;
+use crate::utility::errors::{StockrsError, StockrsResult};
 use crate::time::TimeService;
-use crate::types::api::StockApi;
-use crate::types::broker::Order;
-use crate::types::trading::AssetInfo;
+use crate::utility::types::api::StockApi;
+use crate::utility::types::broker::Order;
+use crate::utility::types::trading::AssetInfo;
+
 use std::rc::Rc;
 
 /// 백테스팅용 보유 종목 정보
@@ -81,7 +82,7 @@ impl BacktestApi {
         // 보유 종목 평가금액 계산 (현재 시간의 가격 사용)
         for (stockcode, holding) in holdings.iter() {
             let current_price =
-                if let Some(db_api) = self.db_api.as_any().downcast_ref::<crate::apis::DbApi>() {
+                if let Some(db_api) = self.db_api.as_any().downcast_ref::<crate::utility::apis::DbApi>() {
                     db_api.get_current_price_at_time(stockcode, &current_time)?
                 } else {
                     return Err(StockrsError::general(
@@ -244,7 +245,7 @@ impl BacktestApi {
         // 보유 종목 평가금액 계산
         for (stockcode, holding) in holdings.iter() {
             let current_price =
-                if let Some(db_api) = self.db_api.as_any().downcast_ref::<crate::apis::DbApi>() {
+                if let Some(db_api) = self.db_api.as_any().downcast_ref::<crate::utility::apis::DbApi>() {
                     db_api.get_current_price_at_time(stockcode, time_str)?
                 } else {
                     return Err(StockrsError::general(
@@ -344,7 +345,7 @@ impl StockApi for BacktestApi {
     fn get_current_price(&self, stockcode: &str) -> StockrsResult<f64> {
         // 백테스팅 모드에서는 현재 시간의 가격을 사용
         let current_time = self.get_current_time();
-        if let Some(db_api) = self.db_api.as_any().downcast_ref::<crate::apis::DbApi>() {
+        if let Some(db_api) = self.db_api.as_any().downcast_ref::<crate::utility::apis::DbApi>() {
             db_api.get_current_price_at_time(stockcode, &current_time)
         } else {
             Err(StockrsError::general(
@@ -355,7 +356,7 @@ impl StockApi for BacktestApi {
 
     fn get_current_price_at_time(&self, stockcode: &str, time_str: &str) -> StockrsResult<f64> {
         // 백테스팅 모드에서는 지정된 시간의 가격을 사용
-        if let Some(db_api) = self.db_api.as_any().downcast_ref::<crate::apis::DbApi>() {
+        if let Some(db_api) = self.db_api.as_any().downcast_ref::<crate::utility::apis::DbApi>() {
             db_api.get_current_price_at_time(stockcode, time_str)
         } else {
             Err(StockrsError::general(

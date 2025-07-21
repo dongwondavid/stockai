@@ -12,11 +12,11 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
-use crate::apis::db_api::DbApi;
-use crate::apis::korea_api::KoreaApi;
-use crate::config::get_config;
-use crate::errors::{StockrsError, StockrsResult};
-use crate::types::trading::TradingMode;
+use crate::utility::apis::db_api::DbApi;
+use crate::utility::apis::korea_api::KoreaApi;
+use crate::utility::config::get_config;
+use crate::utility::errors::{StockrsError, StockrsResult};
+use crate::utility::types::trading::TradingMode;
 use features::{calculate_features_for_stock_optimized, get_trading_dates_list};
 
 #[derive(Debug, Serialize, Deserialize)]

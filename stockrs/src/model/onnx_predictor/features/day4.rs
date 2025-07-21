@@ -1,5 +1,5 @@
 use super::utils::{calculate_ema, get_daily_data, get_morning_data};
-use crate::errors::StockrsResult;
+use crate::utility::errors::{StockrsError, StockrsResult};
 use chrono::{Duration, NaiveDate};
 use rusqlite::Connection;
 use tracing::debug;
@@ -123,17 +123,17 @@ pub fn calculate_pos_vs_high_5d(
 ) -> StockrsResult<f64> {
     // 날짜 파싱 (YYYYMMDD 형식)
     let year = date[..4].parse::<i32>().map_err(|_| {
-        crate::errors::StockrsError::prediction(format!("잘못된 연도 형식: {}", date))
+        StockrsError::prediction(format!("잘못된 연도 형식: {}", date))
     })?;
     let month = date[4..6].parse::<u32>().map_err(|_| {
-        crate::errors::StockrsError::prediction(format!("잘못된 월 형식: {}", date))
+        StockrsError::prediction(format!("잘못된 월 형식: {}", date))
     })?;
     let day = date[6..8].parse::<u32>().map_err(|_| {
-        crate::errors::StockrsError::prediction(format!("잘못된 일 형식: {}", date))
+        StockrsError::prediction(format!("잘못된 일 형식: {}", date))
     })?;
 
     let target_date = NaiveDate::from_ymd_opt(year, month, day).ok_or_else(|| {
-        crate::errors::StockrsError::prediction(format!("잘못된 날짜 형식: {}", date))
+        StockrsError::prediction(format!("잘못된 날짜 형식: {}", date))
     })?;
 
     // 테이블명 (일봉 DB는 A 접두사 포함)
@@ -146,7 +146,7 @@ pub fn calculate_pos_vs_high_5d(
     // 당일 현재가 조회 (일봉 데이터에서 종가 사용)
     let daily_data = get_daily_data(daily_db, stock_code, date)?;
     let current_price = daily_data.get_close().ok_or_else(|| {
-        crate::errors::StockrsError::prediction(format!(
+        StockrsError::prediction(format!(
             "당일 종가를 찾을 수 없습니다 (종목: {})",
             stock_code
         ))
@@ -171,7 +171,7 @@ pub fn calculate_pos_vs_high_5d(
     )?;
 
     if five_day_high <= 0.0 {
-        return Err(crate::errors::StockrsError::prediction(format!(
+        return Err(StockrsError::prediction(format!(
             "5일 고점이 유효하지 않습니다: {:.2}",
             five_day_high
         )));
@@ -222,17 +222,17 @@ pub fn calculate_pos_vs_high_3d(
 ) -> StockrsResult<f64> {
     // 날짜 파싱 (YYYYMMDD 형식)
     let year = date[..4].parse::<i32>().map_err(|_| {
-        crate::errors::StockrsError::prediction(format!("잘못된 연도 형식: {}", date))
+        StockrsError::prediction(format!("잘못된 연도 형식: {}", date))
     })?;
     let month = date[4..6].parse::<u32>().map_err(|_| {
-        crate::errors::StockrsError::prediction(format!("잘못된 월 형식: {}", date))
+        StockrsError::prediction(format!("잘못된 월 형식: {}", date))
     })?;
     let day = date[6..8].parse::<u32>().map_err(|_| {
-        crate::errors::StockrsError::prediction(format!("잘못된 일 형식: {}", date))
+        StockrsError::prediction(format!("잘못된 일 형식: {}", date))
     })?;
 
     let target_date = NaiveDate::from_ymd_opt(year, month, day).ok_or_else(|| {
-        crate::errors::StockrsError::prediction(format!("잘못된 날짜 형식: {}", date))
+        StockrsError::prediction(format!("잘못된 날짜 형식: {}", date))
     })?;
 
     // 테이블명 (일봉 DB는 A 접두사 포함)
@@ -245,7 +245,7 @@ pub fn calculate_pos_vs_high_3d(
     // 당일 현재가 조회 (일봉 데이터에서 종가 사용)
     let daily_data = get_daily_data(daily_db, stock_code, date)?;
     let current_price = daily_data.get_close().ok_or_else(|| {
-        crate::errors::StockrsError::prediction(format!(
+        StockrsError::prediction(format!(
             "당일 종가를 찾을 수 없습니다 (종목: {})",
             stock_code
         ))
@@ -270,7 +270,7 @@ pub fn calculate_pos_vs_high_3d(
     )?;
 
     if three_day_high <= 0.0 {
-        return Err(crate::errors::StockrsError::prediction(format!(
+        return Err(StockrsError::prediction(format!(
             "3일 고점이 유효하지 않습니다: {:.2}",
             three_day_high
         )));

@@ -47,7 +47,7 @@ pub enum StockrsError {
 
     /// 설정 관련 오류 (config.rs의 ConfigError와 연동)
     #[error("설정 오류: {0}")]
-    Config(#[from] crate::config::ConfigError),
+    Config(#[from] crate::utility::config::ConfigError),
 
     /// 네트워크 관련 오류
     #[error("네트워크 오류: {operation} - {reason}")]
@@ -343,6 +343,6 @@ mod tests {
             Ok(42)
         }
 
-        assert_eq!(test_function().unwrap(), 42);
+        assert_eq!(test_function().expect("Test function should succeed"), 42);
     }
 }

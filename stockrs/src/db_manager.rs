@@ -1,6 +1,6 @@
-use crate::errors::{StockrsError, StockrsResult};
-use crate::types::api::SharedApi;
-use crate::types::trading::Trading;
+use crate::utility::errors::{StockrsError, StockrsResult};
+use crate::utility::types::api::SharedApi;
+use crate::utility::types::trading::Trading;
 use chrono::NaiveDate;
 use rusqlite::{Connection, Result as SqliteResult};
 use std::path::PathBuf;
@@ -92,9 +92,9 @@ impl ApiTypeDetector {
     pub fn calculate_balance_in_backtest(
         &self,
         time: &str,
-    ) -> StockrsResult<crate::types::trading::AssetInfo> {
+    ) -> StockrsResult<crate::utility::types::trading::AssetInfo> {
         // BacktestApi의 시간 기반 잔고 계산 사용
-        if let Some(backtest_api) = self.api.as_any().downcast_ref::<crate::apis::BacktestApi>() {
+        if let Some(backtest_api) = self.api.as_any().downcast_ref::<crate::utility::apis::BacktestApi>() {
             backtest_api.calculate_balance_at_time(time)
         } else {
             // BacktestApi가 아닌 경우 일반 잔고 조회
@@ -179,7 +179,7 @@ impl DBManager {
     fn get_balance_with_mode(
         &self,
         mode: BacktestMode,
-    ) -> DBResult<crate::types::trading::AssetInfo> {
+    ) -> DBResult<crate::utility::types::trading::AssetInfo> {
         if mode.is_backtest {
             if let Some(time) = mode.time_str() {
                 // 백테스팅 모드에서 특정 시간의 잔고 계산
@@ -213,7 +213,7 @@ impl DBManager {
         };
 
         // 잔고 조회
-        let balance_result: DBResult<crate::types::trading::AssetInfo> =
+        let balance_result: DBResult<crate::utility::types::trading::AssetInfo> =
             self.get_balance_with_mode(mode);
         let result = balance_result.into_result().map_err(|e| {
             rusqlite::Error::SqliteFailure(
@@ -273,7 +273,7 @@ impl DBManager {
         };
 
         // 잔고 조회
-        let balance_result: DBResult<crate::types::trading::AssetInfo> =
+        let balance_result: DBResult<crate::utility::types::trading::AssetInfo> =
             self.get_balance_with_mode(mode);
         let result = balance_result.into_result().map_err(|e| {
             rusqlite::Error::SqliteFailure(
@@ -369,7 +369,7 @@ impl DBManager {
         };
 
         // 잔고 조회
-        let balance_result: DBResult<crate::types::trading::AssetInfo> =
+        let balance_result: DBResult<crate::utility::types::trading::AssetInfo> =
             self.get_balance_with_mode(mode);
         let result = balance_result.into_result().map_err(|e| {
             rusqlite::Error::SqliteFailure(

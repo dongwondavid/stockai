@@ -72,7 +72,7 @@ fn main() {
             stock_list.len()
         );
 
-        match analyze_single_stock(&stock_info, &sector_manager, &db_pool, &cache) {
+        match analyze_single_stock(stock_info, &sector_manager, &db_pool, &cache) {
             Ok(_) => info!("종목 {} 분석 완료", stock_info.stock_code),
             Err(e) => error!("종목 {} 분석 실패: {}", stock_info.stock_code, e),
         }
@@ -310,7 +310,7 @@ fn analyze_macd(data: &[solomon::FiveMinData], _stock_code: &str) -> Result<()> 
     let ema3 = calculate_ema(&prices, 3);
     let ema6 = calculate_ema(&prices, 6);
     let macd = ema3 - ema6;
-    let signal = calculate_ema(&vec![macd], 3);
+    let signal = calculate_ema(&[macd], 3);
 
     println!("EMA(3): {:.4}", ema3);
     println!("EMA(6): {:.4}", ema6);
@@ -327,7 +327,7 @@ fn analyze_macd(data: &[solomon::FiveMinData], _stock_code: &str) -> Result<()> 
         let prev_ema3 = calculate_ema(&prev_prices, 3);
         let prev_ema6 = calculate_ema(&prev_prices, 6);
         let prev_macd = prev_ema3 - prev_ema6;
-        let prev_signal = calculate_ema(&vec![prev_macd], 3);
+        let prev_signal = calculate_ema(&[prev_macd], 3);
 
         println!("이전 MACD: {:.4}", prev_macd);
         println!("이전 Signal: {:.4}", prev_signal);
@@ -359,7 +359,7 @@ fn analyze_macd(data: &[solomon::FiveMinData], _stock_code: &str) -> Result<()> 
     let ema12 = calculate_ema(&prices, 12);
     let ema26 = calculate_ema(&prices, 26);
     let macd_regular = ema12 - ema26;
-    let signal_regular = calculate_ema(&vec![macd_regular], 9);
+    let signal_regular = calculate_ema(&[macd_regular], 9);
 
     println!("EMA(12): {:.4}", ema12);
     println!("EMA(26): {:.4}", ema26);
@@ -380,7 +380,7 @@ fn analyze_macd(data: &[solomon::FiveMinData], _stock_code: &str) -> Result<()> 
         let prev_ema12 = calculate_ema(&prev_prices, 12);
         let prev_ema26 = calculate_ema(&prev_prices, 26);
         let prev_macd_regular = prev_ema12 - prev_ema26;
-        let prev_signal_regular = calculate_ema(&vec![prev_macd_regular], 9);
+        let prev_signal_regular = calculate_ema(&[prev_macd_regular], 9);
 
         println!("이전 MACD: {:.4}", prev_macd_regular);
         println!("이전 Signal: {:.4}", prev_signal_regular);

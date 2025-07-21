@@ -73,7 +73,7 @@ fn main() {
     for stock_info in stock_list {
         date_groups
             .entry(stock_info.date)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(stock_info);
     }
 
@@ -350,7 +350,7 @@ fn calculate_position_ratios_optimized(
 
     // VWAP 계산 - 캐시 활용
     let vwap = {
-        let cache_key = format!("{}", stock_code);
+        let cache_key = stock_code.to_string();
         let cache_guard = cache.lock().unwrap();
         if let Some(&cached_vwap) = cache_guard.vwap_cache.get(&cache_key) {
             cached_vwap
@@ -402,7 +402,7 @@ fn calculate_volume_ratio_optimized(
         return Ok(0.0);
     }
 
-    let cache_key = format!("{}", stock_code);
+            let cache_key = stock_code.to_string();
     let cache_guard = cache.lock().unwrap();
     if let Some(&avg_volume) = cache_guard.volume_cache.get(&cache_key) {
         return Ok(if avg_volume > 0.0 {

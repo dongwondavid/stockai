@@ -40,7 +40,7 @@ fn main() {
         .unwrap_or_else(|_| "D:\\db\\stock_price(1day)_with_data.db".to_string());
     info!("DB 경로: {}", daily_db_path);
 
-    let mut daily_db = match Connection::open(&daily_db_path) {
+    let daily_db = match Connection::open(&daily_db_path) {
         Ok(db) => {
             info!("DB 연결 성공");
             // 성능 최적화 설정
@@ -169,14 +169,14 @@ fn main() {
 
         match calculate_foreign_ratio_feature_thread_optimized(
             &modified_stock_info,
-            &mut daily_db,
+            &daily_db,
             &mut cache,
         ) {
             Ok(result) => {
                 info!("결과: {}", result);
 
                 // 상세 분석을 위해 캐시된 데이터 확인
-                let cache_key = format!("{}", table_name);
+                let cache_key = table_name.to_string();
                 if let Some(ratios) = cache.foreign_ratio_cache.get(&cache_key) {
                     info!("외국인 현보유비율 데이터 (캐시): {:?}", ratios);
 
@@ -242,7 +242,7 @@ fn calculate_foreign_ratio_feature_thread_optimized(
     daily_db: &Connection,
     cache: &mut Cache,
 ) -> Result<i32> {
-    let cache_key = format!("{}", stock_info.stock_code);
+    let cache_key = stock_info.stock_code.to_string();
 
     // 캐시 확인
     {

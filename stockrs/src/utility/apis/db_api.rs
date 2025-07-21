@@ -1,8 +1,8 @@
-use crate::config::get_config;
-use crate::errors::{StockrsError, StockrsResult};
-use crate::types::api::StockApi;
-use crate::types::broker::Order;
-use crate::types::trading::AssetInfo;
+use crate::utility::config::get_config;
+use crate::utility::errors::{StockrsError, StockrsResult};
+use crate::utility::types::api::StockApi;
+use crate::utility::types::broker::Order;
+use crate::utility::types::trading::AssetInfo;
 use rusqlite::Connection;
 use tracing::{debug, info};
 

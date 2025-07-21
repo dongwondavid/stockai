@@ -1,5 +1,5 @@
 use super::utils::{get_morning_data, get_previous_trading_day};
-use crate::errors::StockrsResult;
+use crate::utility::errors::{StockrsError, StockrsResult};
 use rusqlite::Connection;
 use tracing::debug;
 
@@ -26,14 +26,14 @@ pub fn calculate_prev_day_range_ratio(
             |row| row.get(0),
         )
         .map_err(|_| {
-            crate::errors::StockrsError::database_query(format!(
+            StockrsError::database_query(format!(
                 "일봉 테이블 존재 여부 확인 실패: {}",
                 table_name
             ))
         })?;
 
     if table_exists == 0 {
-        return Err(crate::errors::StockrsError::database_query(format!(
+        return Err(StockrsError::database_query(format!(
             "일봉 테이블이 존재하지 않습니다: {} (종목: {})",
             table_name, stock_code
         )));
@@ -47,14 +47,14 @@ pub fn calculate_prev_day_range_ratio(
             |row| row.get(0),
         )
         .map_err(|_| {
-            crate::errors::StockrsError::database_query(format!(
+            StockrsError::database_query(format!(
                 "전일 데이터 존재 여부 확인 실패: {} (날짜: {})",
                 table_name, prev_date_str
             ))
         })?;
 
     if prev_data_exists == 0 {
-        return Err(crate::errors::StockrsError::database_query(format!(
+        return Err(StockrsError::database_query(format!(
             "전일 데이터가 없습니다: {} (테이블: {}, 날짜: {})",
             stock_code, table_name, prev_date_str
         )));
@@ -71,7 +71,7 @@ pub fn calculate_prev_day_range_ratio(
     )?;
 
     if prev_close <= 0.0 {
-        return Err(crate::errors::StockrsError::prediction(format!(
+        return Err(StockrsError::prediction(format!(
             "전일 종가가 유효하지 않습니다: {:.2} (종목: {})",
             prev_close, stock_code
         )));
@@ -107,14 +107,14 @@ pub fn calculate_prev_close_to_now_ratio(
             |row| row.get(0),
         )
         .map_err(|_| {
-            crate::errors::StockrsError::database_query(format!(
+            StockrsError::database_query(format!(
                 "일봉 테이블 존재 여부 확인 실패: {}",
                 table_name
             ))
         })?;
 
     if table_exists == 0 {
-        return Err(crate::errors::StockrsError::database_query(format!(
+        return Err(StockrsError::database_query(format!(
             "일봉 테이블이 존재하지 않습니다: {} (종목: {})",
             table_name, stock_code
         )));
@@ -140,14 +140,14 @@ pub fn calculate_prev_close_to_now_ratio(
             |row| row.get(0),
         )
         .map_err(|_| {
-            crate::errors::StockrsError::database_query(format!(
+            crate::utility::errors::StockrsError::database_query(format!(
                 "전일 데이터 존재 여부 확인 실패: {} (날짜: {})",
                 table_name, prev_date_str
             ))
         })?;
 
     if prev_data_exists == 0 {
-        return Err(crate::errors::StockrsError::database_query(format!(
+        return Err(crate::utility::errors::StockrsError::database_query(format!(
             "전일 데이터가 없습니다: {} (테이블: {}, 날짜: {})",
             stock_code, table_name, prev_date_str
         )));
@@ -161,7 +161,7 @@ pub fn calculate_prev_close_to_now_ratio(
     )?;
 
     if prev_close <= 0.0 {
-        return Err(crate::errors::StockrsError::prediction(format!(
+        return Err(crate::utility::errors::StockrsError::prediction(format!(
             "전일 종가가 유효하지 않습니다: {:.2} (종목: {})",
             prev_close, stock_code
         )));
@@ -170,14 +170,14 @@ pub fn calculate_prev_close_to_now_ratio(
     // 당일 현재가 조회 (9시반 이전 5분봉 마지막 종가)
     let morning_data = get_morning_data(db, stock_code, date)?;
     let current_close = morning_data.get_last_close().ok_or_else(|| {
-        crate::errors::StockrsError::prediction(format!(
+        StockrsError::prediction(format!(
             "당일 현재가를 찾을 수 없습니다 (종목: {})",
             stock_code
         ))
     })?;
 
     if current_close <= 0.0 {
-        return Err(crate::errors::StockrsError::prediction(format!(
+        return Err(StockrsError::prediction(format!(
             "당일 현재가가 유효하지 않습니다: {:.2} (종목: {})",
             current_close, stock_code
         )));

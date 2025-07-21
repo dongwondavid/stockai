@@ -3,8 +3,11 @@ pub mod onnx_predictor; // 재활성화
 
 // 공용 타입들
 use crate::time::TimeService;
-use crate::types::api::{SharedApi, StockApi};
-use crate::types::broker::Order;
+use crate::utility::types::api::{SharedApi, StockApi};
+use crate::utility::types::broker::Order;
+use crate::utility::apis;
+use crate::utility::errors::{StockrsError, StockrsResult};
+use crate::utility::types::trading;
 use std::error::Error;
 
 /// 모든 모델이 구현해야 하는 기본 trait
@@ -79,20 +82,20 @@ impl ApiBundle {
     }
 
     /// BacktestApi에 직접 접근 (백테스팅용)
-    pub fn get_backtest_api(&self) -> Option<&crate::apis::BacktestApi> {
+    pub fn get_backtest_api(&self) -> Option<&apis::BacktestApi> {
         self.backtest_api
             .as_ref()
-            .and_then(|api| api.as_any().downcast_ref::<crate::apis::BacktestApi>())
+            .and_then(|api| api.as_any().downcast_ref::<apis::BacktestApi>())
     }
 
     /// DbApi에 직접 접근 (백테스팅용)
-    pub fn get_db_api(&self) -> Option<&crate::apis::DbApi> {
+    pub fn get_db_api(&self) -> Option<&apis::DbApi> {
         // db_api를 다운캐스팅하여 직접 접근
-        self.db_api.as_any().downcast_ref::<crate::apis::DbApi>()
+        self.db_api.as_any().downcast_ref::<apis::DbApi>()
     }
 
     /// 잔고 조회 (백테스팅 모드에서는 BacktestApi 사용)
-    pub fn get_balance(&self) -> crate::errors::StockrsResult<crate::types::trading::AssetInfo> {
+    pub fn get_balance(&self) -> StockrsResult<trading::AssetInfo> {
         if let Some(backtest_api) = self.get_backtest_api() {
             // 백테스팅 모드: BacktestApi 사용
             backtest_api.get_balance()
@@ -107,13 +110,13 @@ impl ApiBundle {
         &self,
         stockcode: &str,
         time_str: &str,
-    ) -> crate::errors::StockrsResult<f64> {
+    ) -> StockrsResult<f64> {
         // DbApi에 직접 접근하여 시간 기반 조회
         if let Some(db_api) = self.get_db_api() {
             db_api.get_current_price_at_time(stockcode, time_str)
         } else {
             // 백테스팅 모드가 아닌 경우 에러 발생
-            Err(crate::errors::StockrsError::UnsupportedFeature {
+            Err(StockrsError::UnsupportedFeature {
                 feature: "시간 기반 현재가 조회".to_string(),
                 phase: "실시간/모의투자 모드".to_string(),
             })

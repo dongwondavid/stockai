@@ -1,5 +1,5 @@
 use crate::db_manager::DBManager;
-use crate::types::trading::Trading;
+use crate::utility::types::trading::Trading;
 use chrono::NaiveDateTime;
 
 #[derive(Debug, Clone, Copy)]

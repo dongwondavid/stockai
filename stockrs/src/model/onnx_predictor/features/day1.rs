@@ -1,5 +1,5 @@
 use super::utils::get_morning_data;
-use crate::errors::{StockrsError, StockrsResult};
+use crate::utility::errors::{StockrsError, StockrsResult};
 use rusqlite::Connection;
 
 /// day1_current_price_ratio: 현재가 / 시가 비율

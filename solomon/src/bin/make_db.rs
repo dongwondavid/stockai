@@ -56,7 +56,7 @@ fn main() {
     let mut total_matching_stocks = 0;
     let mut date_results = Vec::new();
 
-    for (_index, &date_num) in date_list.iter().enumerate() {
+    for &date_num in date_list.iter() {
         // 날짜 형식 변환 (YYYYMMDD -> NaiveDate)
         let year = (date_num / 10000) as i32;
         let month = ((date_num % 10000) / 100) as u32;

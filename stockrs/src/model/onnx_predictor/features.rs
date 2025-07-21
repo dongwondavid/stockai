@@ -4,7 +4,7 @@ pub mod day3;
 pub mod day4;
 pub mod utils;
 
-use crate::errors::StockrsResult;
+use crate::utility::errors::StockrsResult;
 use rusqlite::Connection;
 use tracing::warn;
 

@@ -1,8 +1,8 @@
-use crate::config::get_config;
+use crate::utility::config::get_config;
 use crate::model::{ApiBundle, Model, ONNXPredictor};
 use crate::time::TimeService;
-use crate::types::broker::{Order, OrderSide};
-use crate::types::trading::TradingMode;
+use crate::utility::types::broker::{Order, OrderSide};
+use crate::utility::types::trading::TradingMode;
 use chrono::{NaiveDateTime, Timelike};
 use std::error::Error;
 use tracing::{debug, info, warn};

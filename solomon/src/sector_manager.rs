@@ -41,12 +41,18 @@ pub struct SectorManager {
     stock_map: HashMap<String, StockInfo>,
 }
 
-impl SectorManager {
-    pub fn new() -> Self {
-        debug!("SectorManager 새로 생성됨");
+impl Default for SectorManager {
+    fn default() -> Self {
+        debug!("SectorManager 기본값으로 생성됨");
         Self {
             stock_map: HashMap::new(),
         }
+    }
+}
+
+impl SectorManager {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn load_from_csv(&mut self, csv_path: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -237,7 +243,7 @@ impl SectorManager {
         let mut stmt = db.prepare("SELECT stock_code FROM answer WHERE date = ? ORDER BY rank")?;
 
         let all_stocks: Vec<String> = stmt
-            .query_map([&date_int], |row| Ok(row.get(0)?))?
+            .query_map([&date_int], |row| row.get(0))?
             .filter_map(|r| r.ok())
             .collect();
 
@@ -308,7 +314,7 @@ impl SectorManager {
             // 섹터별 종목 목록 생성 (상승률과 함께)
             sector_stocks
                 .entry(sector.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push((code.clone(), gain_ratio));
         }
 
@@ -482,7 +488,7 @@ impl SectorManager {
             db.prepare("SELECT stock_code FROM answer WHERE date = ? ORDER BY rank LIMIT 15")?;
 
         let top_15_stocks: Vec<String> = stmt
-            .query_map([&date_int], |row| Ok(row.get(0)?))?
+            .query_map([&date_int], |row| row.get(0))?
             .filter_map(|r| r.ok())
             .collect();
 
@@ -543,7 +549,7 @@ impl SectorManager {
             db.prepare("SELECT stock_code FROM answer WHERE date = ? ORDER BY rank LIMIT 30")?;
 
         let top_30_stocks: Vec<String> = stmt
-            .query_map([&date_int], |row| Ok(row.get(0)?))?
+            .query_map([&date_int], |row| row.get(0))?
             .filter_map(|r| r.ok())
             .collect();
 
@@ -603,7 +609,7 @@ impl SectorManager {
         let mut stmt = db.prepare("SELECT stock_code FROM answer WHERE date = ? ORDER BY rank")?;
 
         let all_stocks: Vec<String> = stmt
-            .query_map([&date_int], |row| Ok(row.get(0)?))?
+            .query_map([&date_int], |row| row.get(0))?
             .filter_map(|r| r.ok())
             .collect();
 
@@ -656,7 +662,7 @@ impl SectorManager {
     /// DB에서 모든 테이블 목록을 가져옴 (5분봉 데이터 테이블들)
     pub fn get_db_table_list(&self, db: &Connection) -> Result<Vec<String>> {
         let mut stmt = db.prepare("SELECT name FROM sqlite_master WHERE type='table'")?;
-        let table_iter = stmt.query_map([], |row| Ok(row.get(0)?))?;
+        let table_iter = stmt.query_map([], |row| row.get(0))?;
 
         let mut tables = Vec::new();
         for table in table_iter {

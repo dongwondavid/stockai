@@ -1,10 +1,12 @@
-use crate::apis::{BacktestApi, DbApi, KoreaApi};
+use crate::utility::apis::{BacktestApi, DbApi, KoreaApi};
 use crate::broker::StockBroker;
 use crate::db_manager::DBManager;
-use crate::errors::{StockrsError, StockrsResult};
+use crate::utility::errors::{StockrsError, StockrsResult};
 use crate::model::{ApiBundle, Model};
 use crate::time::TimeService;
-use crate::types::api::{ApiType, SharedApi};
+use crate::utility::types::api::{ApiType, SharedApi};
+use crate::utility::config;
+use crate::utility::holiday_checker::HolidayChecker;
 use chrono::Timelike;
 
 /// API 구성 정보
@@ -222,7 +224,7 @@ impl Runner {
 
         // end_date 체크 (백테스팅 모드에서만)
         if self.api_type == ApiType::Backtest {
-            if let Ok(config) = crate::config::get_config() {
+            if let Ok(config) = config::get_config() {
                 let end_date_str = &config.time_management.end_date;
 
                 // YYYYMMDD 형식을 NaiveDate로 파싱
@@ -283,7 +285,7 @@ impl Runner {
 
         // 통합된 "다음 거래일로 이동해야 하는 상황" 체크 - 최적화됨
         let current_date = current_time.date_naive();
-        let mut holiday_checker = crate::holiday_checker::HolidayChecker::default();
+        let mut holiday_checker = HolidayChecker::default();
         let is_weekend = holiday_checker.is_weekend(current_date);
         let is_holiday = holiday_checker.is_holiday(current_date);
 

@@ -1465,7 +1465,7 @@ fn predict_with_onnx_model(
             0.5
         };
 
-        let probability = probability.max(0.0).min(1.0);
+        let probability = probability.clamp(0.0, 1.0);
         info!("최종 확률 (클램핑 후): {:.6}", probability);
 
         results.push(PredictionResult {

@@ -78,7 +78,7 @@ fn main() {
     for stock_info in stock_list {
         date_groups
             .entry(stock_info.date)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(stock_info);
     }
 
@@ -425,29 +425,29 @@ fn calculate_day3_features_thread_optimized(
 
     // C. 과거 급등 이력 기반
     let had_high_volume_gain_experience =
-        calculate_high_volume_gain_experience_thread_optimized(&stock_info, &resources.daily_db)?;
+        calculate_high_volume_gain_experience_thread_optimized(stock_info, &resources.daily_db)?;
 
     // D. 기술적 & 수급 지표
     let is_ema_aligned = calculate_ema_alignment_thread_optimized(
-        &stock_info,
+        stock_info,
         &resources.daily_db,
         &mut resources.cache,
     )?;
     let market_cap_over_3000b = calculate_market_cap_feature_thread_optimized(
-        &stock_info,
+        stock_info,
         &resources.daily_db,
         &mut resources.cache,
     )?;
     let near_price_boundary = calculate_price_boundary_feature(&today_current);
     let foreign_ratio_3day_rising = calculate_foreign_ratio_feature_thread_optimized(
-        &stock_info,
+        stock_info,
         &resources.daily_db,
         &mut resources.cache,
     )?;
 
     // E. 장초 흐름 및 당일 데이터
     let morning_volume_ratio =
-        calculate_morning_volume_ratio_thread_optimized(&stock_info, resources, sector_manager)?;
+        calculate_morning_volume_ratio_thread_optimized(stock_info, resources, sector_manager)?;
     let consecutive_3_positive_candles = calculate_consecutive_candles(&today_data)?;
     let morning_mdd = calculate_morning_mdd(&today_data)?;
 
@@ -645,7 +645,7 @@ fn calculate_high_break_features_thread_optimized(
 
             // 섹터별 5% 이상 상승 종목 수 계산
             let mut sector_rising_counts = HashMap::new();
-            for (_code, (gain_ratio, sector)) in &date_cache.stock_info {
+            for (gain_ratio, sector) in date_cache.stock_info.values() {
                 if *gain_ratio >= 0.05 {
                     *sector_rising_counts.entry(sector.clone()).or_insert(0) += 1;
                 }
@@ -777,7 +777,7 @@ fn calculate_ema_alignment_thread_optimized(
     daily_db: &Connection,
     cache: &mut Cache,
 ) -> Result<i32> {
-    let cache_key = format!("{}", stock_info.stock_code);
+    let cache_key = stock_info.stock_code.to_string();
 
     // 캐시 확인
     {
@@ -838,7 +838,7 @@ fn calculate_market_cap_feature_thread_optimized(
     daily_db: &Connection,
     cache: &mut Cache,
 ) -> Result<i32> {
-    let cache_key = format!("{}", stock_info.stock_code);
+    let cache_key = stock_info.stock_code.to_string();
 
     // 캐시 확인
     {
@@ -877,7 +877,7 @@ fn calculate_foreign_ratio_feature_thread_optimized(
     daily_db: &Connection,
     cache: &mut Cache,
 ) -> Result<i32> {
-    let cache_key = format!("{}", stock_info.stock_code);
+    let cache_key = stock_info.stock_code.to_string();
 
     // 캐시 확인
     {
@@ -971,7 +971,7 @@ fn calculate_morning_volume_ratio_thread_optimized(
     sector_manager: &SectorManager,
 ) -> Result<f64> {
     use chrono::Duration;
-    let cache_key = format!("{}", stock_info.stock_code);
+    let cache_key = stock_info.stock_code.to_string();
 
     // 캐시 확인
     {

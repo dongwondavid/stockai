@@ -1,5 +1,5 @@
 use clap::Parser;
-use korea_investment_api;
+
 use korea_investment_api::types::config::Config;
 use korea_investment_api::types::Account;
 use korea_investment_api::KoreaInvestmentApi;
@@ -16,11 +16,11 @@ struct Opt {
 #[derive(Debug, Error)]
 enum Error {
     #[error(transparent)]
-    IoError(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
     #[error(transparent)]
-    TomlDeserializeError(#[from] toml::de::Error),
+    TomlDeserialize(#[from] toml::de::Error),
     #[error(transparent)]
-    ApiError(#[from] korea_investment_api::Error),
+    Api(#[from] korea_investment_api::Error),
 }
 
 fn get_config(path: &PathBuf) -> Result<Config, Error> {

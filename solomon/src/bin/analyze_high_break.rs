@@ -60,7 +60,7 @@ fn main() {
     ];
 
     // 데이터베이스 연결 풀 생성 (day1, day2와 동일한 방식)
-    let mut db_pool = match create_db_pool() {
+    let db_pool = match create_db_pool() {
         Ok(pool) => pool,
         Err(e) => {
             error!("데이터베이스 연결 풀 생성 실패: {}", e);
@@ -315,7 +315,7 @@ fn main() {
 
         match calculate_high_break_features_thread_optimized(
             &modified_stock_info,
-            &mut db_pool.daily_db,
+            &db_pool.daily_db,
             &sector_manager,
             &date_cache,
             &today_data,
@@ -399,7 +399,7 @@ fn calculate_high_break_features_thread_optimized(
     daily_db: &Connection,
     sector_manager: &SectorManager,
     date_cache: &DateSectorCache,
-    today_data: &Vec<FiveMinData>,
+    today_data: &[FiveMinData],
 ) -> Result<(i32, i32, i32)> {
     info!("=== 6개월 전고점 돌파 특징 계산 시작 ===");
 
@@ -608,7 +608,7 @@ fn calculate_high_break_features_thread_optimized(
 
             // 섹터별 5% 이상 상승 종목 수 계산
             let mut sector_rising_counts = HashMap::new();
-            for (_code, (gain_ratio, sector)) in &date_cache.stock_info {
+            for (gain_ratio, sector) in date_cache.stock_info.values() {
                 if *gain_ratio >= 0.05 {
                     *sector_rising_counts.entry(sector.clone()).or_insert(0) += 1;
                 }
