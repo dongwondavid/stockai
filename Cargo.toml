@@ -3,6 +3,5 @@ resolver = "2"
 
 members = [
     "korea-investment-api",
-    "solomon",
     "stockrs"
 ]

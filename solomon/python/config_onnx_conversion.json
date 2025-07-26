@@ -1,7 +1,0 @@
-{
-  "model_path": "best_model.joblib",
-  "metadata_path": null,
-  "db_path": "D:/db/solomon.db",
-  "onnx_output_path": "models/best_model.onnx",
-  "output_dir": "models"
-}

@@ -1,5 +1,10 @@
 # 📝 변경 이력 로그
 
+2025-07-26T18:14: TASK.md: onnx_predictor 간단한 버전으로 작성 작업 완료 - TASK.md에서 COMPLETE.md로 이동, 모든 작업 완료 확인
+2025-07-26T18:14: COMPLETE.md: onnx_predictor 간단한 버전으로 작성 완료 작업 추가 - rust_model_info.json 삭제, extra_stocks.txt 대신 stocks.txt 사용, onnx 실행가능하게 만들기, config 정리 완료
+2025-07-26T16:20: stockrs/src/model/onnx_predictor.rs: 필터링 후 15개 초과시 상위 15개만 사용하는 로직 추가 - final_stocks 변수 도입, take(15) 메서드로 순위 기반 제한, 디버그 로그 추가
+2025-07-26T16:20: TASK.md: extra_stocks.txt 대신 stocks.txt 사용하는 로직으로 변경 작업 완료 - 필터링 후 15개 초과시 상위 15개만 사용하는 로직 추가 완료
+
 2025-07-26T16:15: TASK.md: start1000.txt 날짜 기반 시스템 시작 시간 1시간 지연 기능 구현 완료 - TASK.md에서 COMPLETE.md로 이동, 모든 Phase 완료 확인
 2025-07-26T16:10: TASK.md: start1000.txt 날짜 기반 시스템 시작 시간 1시간 지연 기능 구현 완료 - Phase 1-4 모든 단계 완료, 설정 시스템 확장부터 특징 추출 시간 범위 조정까지 전체 기능 구현 완료
 
@@ -189,6 +194,9 @@
 2025-07-19T23:15: stockrs/src/runner.rs: expect 호출들을 unwrap_or_else로 변경하여 더 명확한 에러 메시지 제공
 2025-07-19T23:15: stockrs/src/apis/db_api.rs: 공휴일/주말 체크 로직 추가 (거래대금 조회 시 에러 발생)
 2025-07-19T23:15: stockrs/src/model/onnx_predictor.rs: extra_stocks.txt 파일이 없을 때 에러 발생하도록 수정 (경고 → 에러)
+2025-07-26T17:23: stockrs/src/model/onnx_predictor.rs: extra_stocks.txt 대신 stocks.txt 사용하는 로직으로 완전 변경 (함수명, 필드명, 필터링 로직, 파일 읽기 로직 모두 변경)
+2025-07-26T17:23: stockrs/src/utility/config.rs: OnnxModelConfig 구조체에서 extra_stocks_file_path → included_stocks_file_path로 변경
+2025-07-26T17:23: config.example.toml: extra_stocks_file_path → included_stocks_file_path 설정 변경
 2025-07-19T23:15: stockrs/src/lib.rs: expect 호출들을 unwrap_or_else로 변경하여 더 명확한 에러 메시지 제공
 2025-07-19T23:15: stockrs/src/errors.rs: 테스트 코드의 panic을 assert로 변경
 2025-07-19T23:20: stockrs/src/errors.rs: 에러 메시지 중복 문제 수정 (Box<dyn Error> 변환 시 StockrsError 중복 방지)
@@ -266,3 +274,5 @@
 2025-07-21T08:30: TASK.md: Phase 1 설정 시스템 확장 완료 체크 - config.example.toml 설정 추가, TimeManagementConfig 구조체 확장, 기본값 설정 및 로드 로직 구현 완료
 
 2025-07-21T09:30: stockrs/src/model/joonwoo.rs: 특별한 날짜에 entry_time/force_close_time 오프셋 적용 - get_entry_time_for_today, get_force_close_time_for_today 헬퍼 추가, try_entry/force_close_all/on_event 등에서 오프셋 반영
+
+2024-06-09: stockrs/src/model/onnx_predictor.rs, stockrs/src/utility/config.rs: rust_model_info.json 완전 제거 - ONNXModelInfo 구조체 삭제, model_file_path 직접 사용, 환경변수 ONNX_MODEL_FILE_PATH로 변경, 테스트 코드 수정

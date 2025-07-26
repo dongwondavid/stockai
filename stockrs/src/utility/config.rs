@@ -38,10 +38,9 @@ pub struct DatabaseConfig {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct OnnxModelConfig {
-    pub model_info_path: String,
     pub model_file_path: String,
     pub features_file_path: String,
-    pub extra_stocks_file_path: String,
+    pub included_stocks_file_path: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -163,8 +162,8 @@ impl Config {
         }
 
         // ONNX 모델 경로
-        if let Ok(path) = std::env::var("ONNX_MODEL_INFO_PATH") {
-            self.onnx_model.model_info_path = path;
+        if let Ok(path) = std::env::var("ONNX_MODEL_FILE_PATH") {
+            self.onnx_model.model_file_path = path;
         }
 
         // 실제 거래 API 키들 (보안상 환경변수 우선)
@@ -427,10 +426,9 @@ mod tests {
             },
             // ... 다른 필드들은 테스트용으로 기본값 설정
             onnx_model: OnnxModelConfig {
-                model_info_path: "test".to_string(),
                 model_file_path: "test".to_string(),
                 features_file_path: "test".to_string(),
-                extra_stocks_file_path: "test".to_string(),
+                included_stocks_file_path: "test".to_string(),
             },
             korea_investment_api: KoreaInvestmentApiConfig {
                 real_app_key: "test".to_string(),

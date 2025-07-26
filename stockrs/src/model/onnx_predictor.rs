@@ -17,7 +17,7 @@ use crate::utility::apis::korea_api::KoreaApi;
 use crate::utility::config::get_config;
 use crate::utility::errors::{StockrsError, StockrsResult};
 use crate::utility::types::trading::TradingMode;
-use features::{calculate_features_for_stock_optimized};
+use features::calculate_features_for_stock_optimized;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StockFeatures {
@@ -31,21 +31,10 @@ pub struct PredictionResult {
     pub probability: f64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct ONNXModelInfo {
-    onnx_model_path: String,
-    features: Vec<String>,
-    feature_count: usize,
-    input_name: String,
-    input_shape: Vec<usize>,
-    output_name: String,
-    output_shape: Vec<usize>,
-}
-
 pub struct ONNXPredictor {
     session: ort::Session,
     features: Vec<String>,
-    extra_stocks_set: HashSet<String>,
+    included_stocks_set: HashSet<String>,
     trading_dates: Vec<String>,
     trading_mode: TradingMode,
 }
@@ -56,13 +45,10 @@ impl ONNXPredictor {
         let config = get_config()?;
 
         // config에서 경로들 로드
-        let model_info_path = &config.onnx_model.model_info_path;
-        let extra_stocks_path = &config.onnx_model.extra_stocks_file_path;
+        let model_file_path = &config.onnx_model.model_file_path;
+        let included_stocks_path = &config.onnx_model.included_stocks_file_path;
         let features_path = &config.onnx_model.features_file_path;
         let trading_dates_path = &config.time_management.trading_dates_file_path;
-
-        // 모델 정보 로드
-        let model_info = Self::load_model_info(model_info_path)?;
 
         // ONNX Runtime 환경 초기화
         let environment = Arc::new(
@@ -79,20 +65,20 @@ impl ONNXPredictor {
             .map_err(|e| {
                 StockrsError::model_loading(format!("ONNX SessionBuilder 생성 실패: {}", e))
             })?
-            .with_model_from_file(&model_info.onnx_model_path)
+            .with_model_from_file(model_file_path)
             .map_err(|e| StockrsError::model_loading(format!("ONNX 모델 파일 로드 실패: {}", e)))?;
 
-        // extra_stocks.txt 로드
-        let extra_stocks_set = Self::load_extra_stocks(extra_stocks_path)?;
+        // stocks.txt 로드
+        let included_stocks_set = Self::load_included_stocks(included_stocks_path)?;
 
         // features.txt 로드
         let features = Self::load_features(features_path)?;
 
-        info!("ONNX 모델 로드 완료: {}", model_info.onnx_model_path);
+        info!("ONNX 모델 로드 완료: {}", model_file_path);
         info!(
-            "특징 수: {}, 제외 종목 수: {}",
+            "특징 수: {}, 포함 종목 수: {}",
             features.len(),
-            extra_stocks_set.len()
+            included_stocks_set.len()
         );
         
         // 1일봉 날짜 목록 로드
@@ -113,7 +99,7 @@ impl ONNXPredictor {
         Ok(ONNXPredictor {
             session,
             features,
-            extra_stocks_set,
+            included_stocks_set,
             trading_dates,
             trading_mode,
         })
@@ -155,10 +141,10 @@ impl ONNXPredictor {
 
         debug!("거래대금 상위 30개 종목: {:?}", top_stocks);
 
-        // extra_stocks.txt에 없는 종목들만 필터링
+        // stocks.txt에 있는 종목들만 필터링
         let filtered_stocks: Vec<String> = top_stocks
             .into_iter()
-            .filter(|stock| !self.extra_stocks_set.contains(stock))
+            .filter(|stock| self.included_stocks_set.contains(stock))
             .collect();
 
         debug!("필터링된 종목 수: {}개", filtered_stocks.len());
@@ -169,9 +155,19 @@ impl ONNXPredictor {
             ));
         }
 
+        // 필터링 후 15개 초과로 개수가 남았다면 순위대로 15개만 남겨서 사용
+        let final_stocks = if filtered_stocks.len() > 15 {
+            debug!("필터링된 종목이 15개 초과 ({}개) - 상위 15개만 사용", filtered_stocks.len());
+            filtered_stocks.into_iter().take(15).collect::<Vec<String>>()
+        } else {
+            filtered_stocks
+        };
+
+        debug!("최종 분석 대상 종목 수: {}개", final_stocks.len());
+
         // 각 종목에 대해 특징 계산 (최적화됨)
         let features_data =
-            self.calculate_features_for_stocks(&filtered_stocks, date, db, daily_db)?;
+            self.calculate_features_for_stocks(&final_stocks, date, db, daily_db)?;
 
         if features_data.is_empty() {
             return Err(StockrsError::prediction(
@@ -350,55 +346,40 @@ impl ONNXPredictor {
     }
 
     // 유틸리티 함수들
-    fn load_model_info(path: &str) -> StockrsResult<ONNXModelInfo> {
+    fn load_included_stocks(path: &str) -> StockrsResult<HashSet<String>> {
         if !Path::new(path).exists() {
             return Err(StockrsError::file_not_found(format!(
-                "ONNX 모델 정보 파일을 찾을 수 없습니다: {}",
+                "stocks.txt 파일이 없습니다: {}",
                 path
             )));
         }
 
         let file = File::open(path)
-            .map_err(|e| StockrsError::file_io(format!("모델 정보 파일 읽기 실패: {}", e)))?;
-        let model_info: ONNXModelInfo = serde_json::from_reader(file)
-            .map_err(|e| StockrsError::file_parse(format!("모델 정보 파싱 실패: {}", e)))?;
-        Ok(model_info)
-    }
-
-    fn load_extra_stocks(path: &str) -> StockrsResult<HashSet<String>> {
-        if !Path::new(path).exists() {
-            return Err(StockrsError::file_not_found(format!(
-                "extra_stocks.txt 파일이 없습니다: {}",
-                path
-            )));
-        }
-
-        let file = File::open(path)
-            .map_err(|e| StockrsError::file_io(format!("extra_stocks 파일 읽기 실패: {}", e)))?;
+            .map_err(|e| StockrsError::file_io(format!("stocks 파일 읽기 실패: {}", e)))?;
         let reader = BufReader::new(file);
-        let mut extra_stocks = HashSet::new();
+        let mut included_stocks = HashSet::new();
 
         for line in reader.lines() {
             let line = line.map_err(|e| StockrsError::file_io(format!("라인 읽기 실패: {}", e)))?;
             let line = line.trim();
 
-            // 헤더나 빈 줄 건너뛰기
-            if line.is_empty() || line.contains("=") || line.contains("총") {
+            // 빈 줄만 건너뛰기 (stocks.txt는 깔끔한 종목코드 목록)
+            if line.is_empty() {
                 continue;
             }
 
-            extra_stocks.insert(line.to_string());
+            included_stocks.insert(line.to_string());
         }
 
-        if extra_stocks.is_empty() {
+        if included_stocks.is_empty() {
             return Err(StockrsError::file_parse(format!(
-                "extra_stocks.txt 파일이 비어있거나 파싱할 수 없습니다: {}",
+                "stocks.txt 파일이 비어있거나 파싱할 수 없습니다: {}",
                 path
             )));
         }
 
-        debug!("extra_stocks.txt에서 {}개 종목 로드됨", extra_stocks.len());
-        Ok(extra_stocks)
+        debug!("stocks.txt에서 {}개 종목 로드됨", included_stocks.len());
+        Ok(included_stocks)
     }
 
     fn load_features(path: &str) -> StockrsResult<Vec<String>> {

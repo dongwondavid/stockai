@@ -13,14 +13,12 @@ minute_db_path = "D:\\db\\stock_price(1min).db"
 trading_db_path = "stockrs/trading.db"
 
 [onnx_model]
-# ONNX 모델 메타데이터 파일 경로
-model_info_path = "data/rust_model_info.json"
 # ONNX 모델 파일 경로
-model_file_path = "data/best_model.onnx"
+model_file_path = "data/one.onnx"
 # 특징 리스트 파일
 features_file_path = "data/features.txt"
-# 제외할 종목 리스트
-extra_stocks_file_path = "data/extra_stocks.txt"
+# 포함할 종목 리스트
+included_stocks_file_path = "data/stocks.txt"
 
 [korea_investment_api]
 # ====== 실제 거래 API 설정 ======
@@ -84,11 +82,11 @@ sell_slippage_rate = 0.5
 [joonwoo]
 # ====== Joonwoo 모델 전용 설정 ======
 # 손절매 비율 (%)
-stop_loss_pct = 1.0
+stop_loss_pct = 1.5
 # 익절매 비율 (%)
-take_profit_pct = 2.0
+take_profit_pct = 1.5
 # 추가 손절매 비율 (절반 매도 후 트레일링 스탑) (%)
-trailing_stop_pct = 0.7
+trailing_stop_pct = 0.5
 # 매수 시점 (24시간 형식)
 entry_time = "09:30:00"
 # 강제 정리 시점 (24시간 형식)
@@ -107,10 +105,10 @@ event_check_interval = 30
 # ====== 작동 기간 설정 ======
 # 프로그램 작동 시작 날짜 (YYYYMMDD 형식)
 # 백테스팅: 백테스트 시작일, 실전/모의: 거래 시작일
-start_date = "20240101"
+start_date = "20230901"
 # 프로그램 작동 종료 날짜 (YYYYMMDD 형식) 
 # 백테스팅: 백테스트 종료일, 실전/모의: 거래 종료일
-end_date = "20240621"
+end_date = "20231121"
 
 # ====== 특별한 시작 시간 설정 ======
 # 특별한 시작 시간이 적용되는 날짜 파일 경로
