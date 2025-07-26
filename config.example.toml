@@ -97,6 +97,8 @@ force_close_time = "12:00:00"
 entry_asset_ratio = 90.0
 
 [time_management]
+# trading_dates.txt 파일 경로
+trading_dates_file_path = "data/samsung_1day_dates.txt"
 # 시장 휴무일 파일 경로 (연도별 파일 사용)
 market_close_file_path = "data/market_close_day_{}.txt"
 # 이벤트 체크 간격 (초)

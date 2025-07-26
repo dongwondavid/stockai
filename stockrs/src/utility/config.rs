@@ -97,6 +97,7 @@ pub struct JoonwooConfig {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct TimeManagementConfig {
+    pub trading_dates_file_path: String,
     pub market_close_file_path: String,
     pub event_check_interval: u64,
     pub start_date: String,
@@ -428,6 +429,7 @@ mod tests {
                 info_account_product_code: "01".to_string(),
             },
             time_management: TimeManagementConfig {
+                trading_dates_file_path: "test".to_string(),
                 market_close_file_path: "test".to_string(),
                 event_check_interval: 30,
                 start_date: "20241201".to_string(),

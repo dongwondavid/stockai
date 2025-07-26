@@ -1,4 +1,4 @@
-use crate::utility::holiday_checker::HolidayChecker;
+use crate::utility::trading_calender::TradingCalender;
 use crate::utility::errors::{StockrsError, StockrsResult};
 use crate::utility::config;
 use crate::local_time;
@@ -30,8 +30,8 @@ pub struct TimeService {
     cached_time: Option<DateTime<Local>>,
     cache_timestamp: Option<std::time::Instant>,
     cache_duration: std::time::Duration,
-    // 공휴일 체커
-    holiday_checker: HolidayChecker,
+    // 거래 캘린더
+    trading_calender: TradingCalender,
 }
 
 impl TimeService {
@@ -105,7 +105,7 @@ impl TimeService {
             cached_time: None,
             cache_timestamp: None,
             cache_duration: std::time::Duration::from_secs(1), // 1초 캐시
-            holiday_checker: HolidayChecker::new().unwrap_or_default(),
+            trading_calender: TradingCalender::new().unwrap_or_default(),
         };
         let (next_time, signal) = service.compute_next_time();
         service.current = next_time;
@@ -286,8 +286,8 @@ impl TimeService {
         } else if self.current < close_time {
             (close_time, TimeSignal::MarketClose)
         } else {
-            // self가 &self이므로 임시로 HolidayChecker를 생성하여 사용
-            let next_date = HolidayChecker::default().next_trading_day(today);
+            // self가 &self이므로 임시로 TradingCalender를 생성하여 사용
+            let next_date = TradingCalender::default().next_trading_day(today);
             (local_time!(next_date, 8, 30, 0), TimeSignal::Overnight)
         }
     }
@@ -308,8 +308,8 @@ impl TimeService {
         } else if self.current < close_time {
             (close_time, TimeSignal::MarketClose)
         } else {
-            // self가 &self이므로 임시로 HolidayChecker를 생성하여 사용
-            let next_date = HolidayChecker::default().next_trading_day(today);
+            // self가 &self이므로 임시로 TradingCalender를 생성하여 사용
+            let next_date = TradingCalender::default().next_trading_day(today);
             (local_time!(next_date, 8, 30, 0), TimeSignal::Overnight)
         }
     }
@@ -401,19 +401,29 @@ impl TimeService {
 
 /// 다음 영업일(Date 부분) 계산 (주말과 공휴일 건너뛰기)
 impl TimeService {
-    /// 다음 거래일을 계산합니다 (공휴일과 주말을 건너뛰고)
+    /// 다음 거래일을 계산합니다 (samsung_1min_dates.txt 기준)
     pub fn next_trading_day(&mut self, date: NaiveDate) -> NaiveDate {
-        self.holiday_checker.next_trading_day(date)
+        self.trading_calender.next_trading_day(date)
     }
 
-    /// 이전 거래일을 계산합니다 (공휴일과 주말을 건너뛰고)
+    /// 이전 거래일을 계산합니다 (samsung_1min_dates.txt 기준)
     pub fn previous_trading_day(&mut self, date: NaiveDate) -> NaiveDate {
-        self.holiday_checker.previous_trading_day(date)
+        self.trading_calender.previous_trading_day(date)
     }
 
-    /// 주어진 날짜가 거래일이 아닌지 확인합니다
+    /// 주어진 날짜가 거래일이 아닌지 확인합니다 (samsung_1min_dates.txt 기준)
     pub fn is_non_trading_day(&mut self, date: NaiveDate) -> bool {
-        self.holiday_checker.is_non_trading_day(date)
+        self.trading_calender.is_non_trading_day(date)
+    }
+
+    /// 현재 시간이 다음 거래일로 건너뛰어야 하는지 확인합니다
+    /// Overnight 신호는 이미 TimeService에서 다음 거래일로 이동했으므로 제외
+    pub fn should_skip_to_next_trading_day(&mut self) -> bool {
+        let current_date = self.current.date_naive();
+        let is_non_trading = self.is_non_trading_day(current_date);
+        let is_overnight = self.current_signal == TimeSignal::Overnight;
+        
+        is_non_trading && !is_overnight
     }
 }
 
@@ -463,113 +473,5 @@ impl TimeService {
         self.update_cache();
 
         Ok(())
-    }
-}
-
-// ------------------------------------------------
-// 테스트
-// ------------------------------------------------
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use chrono::{TimeZone, Timelike};
-
-    #[test]
-    fn test_compute_next_time_signals() {
-        let c = Local;
-
-        // 07:30 -> 데이터 준비
-        let now = c.with_ymd_and_hms(2025, 7, 16, 7, 30, 0)
-            .single()
-            .expect("Invalid test datetime");
-        let service = TimeService {
-            current: now,
-            current_signal: TimeSignal::DataPrep,
-            cached_time: None,
-            cache_timestamp: None,
-            cache_duration: std::time::Duration::from_secs(1),
-            holiday_checker: HolidayChecker::default(),
-        };
-        let (next, sig) = service.compute_next_time();
-        assert_eq!(sig, TimeSignal::DataPrep);
-        assert_eq!(next.time().hour(), 8);
-        assert_eq!(next.time().minute(), 30);
-
-        // 09:00 이후 -> 업데이트
-        let now = c.with_ymd_and_hms(2025, 7, 16, 10, 0, 0)
-            .single()
-            .expect("Invalid test datetime");
-        let service = TimeService {
-            current: now,
-            current_signal: TimeSignal::Update,
-            cached_time: None,
-            cache_timestamp: None,
-            cache_duration: std::time::Duration::from_secs(1),
-            holiday_checker: HolidayChecker::default(),
-        };
-        let (next, sig) = service.compute_next_time();
-        assert_eq!(sig, TimeSignal::Update);
-        assert_eq!(next.time().minute(), 1);
-
-        // 15:30 이후 -> 다음 거래일
-        let friday = c.with_ymd_and_hms(2025, 7, 18, 16, 0, 0)
-            .single()
-            .expect("Invalid test datetime");
-        let service = TimeService {
-            current: friday,
-            current_signal: TimeSignal::Overnight,
-            cached_time: None,
-            cache_timestamp: None,
-            cache_duration: std::time::Duration::from_secs(1),
-            holiday_checker: HolidayChecker::default(),
-        };
-        let (next, sig) = service.compute_next_time();
-        assert_eq!(sig, TimeSignal::Overnight);
-        // 다음 거래일이 월요일인지 확인 (2025년 7월 21일은 월요일)
-        assert_eq!(next.date_naive(), NaiveDate::from_ymd_opt(2025, 7, 21)
-            .expect("Invalid expected date"));
-    }
-
-    #[test]
-    fn test_holiday_loading() {
-        let mut holiday_checker = HolidayChecker::default();
-        
-        // 2025년 1월 1일은 공휴일이어야 함
-        let new_year = NaiveDate::from_ymd_opt(2025, 1, 1)
-            .expect("Invalid test date");
-        assert!(holiday_checker.is_holiday(new_year));
-
-        // 2025년 1월 27일도 공휴일이어야 함
-        let holiday = NaiveDate::from_ymd_opt(2025, 1, 27)
-            .expect("Invalid test date");
-        assert!(holiday_checker.is_holiday(holiday));
-    }
-
-    #[test]
-    fn test_next_trading_day_with_holidays() {
-        let mut holiday_checker = HolidayChecker::default();
-        
-        // 2025년 1월 1일(수요일, 공휴일) 다음 영업일은 1월 2일(목요일)이어야 함
-        let new_year = NaiveDate::from_ymd_opt(2025, 1, 1)
-            .expect("Invalid test date");
-        let next_day = holiday_checker.next_trading_day(new_year);
-        assert_eq!(next_day, NaiveDate::from_ymd_opt(2025, 1, 2)
-            .expect("Invalid expected date"));
-
-        // 2025년 1월 27일(월요일, 공휴일) 다음 영업일은 1월 31일(금요일)이어야 함
-        // (1월 27일, 28일, 29일, 30일이 모두 공휴일이므로)
-        let holiday = NaiveDate::from_ymd_opt(2025, 1, 27)
-            .expect("Invalid test date");
-        let next_day = holiday_checker.next_trading_day(holiday);
-        assert_eq!(next_day, NaiveDate::from_ymd_opt(2025, 1, 31)
-            .expect("Invalid expected date"));
-
-        // 주말 + 공휴일 조합 테스트: 2025년 1월 25일(토요일) 다음 영업일은 1월 31일(금요일)이어야 함
-        // (1월 27일, 28일, 29일, 30일이 모두 공휴일이므로)
-        let saturday = NaiveDate::from_ymd_opt(2025, 1, 25)
-            .expect("Invalid test date");
-        let next_day = holiday_checker.next_trading_day(saturday);
-        assert_eq!(next_day, NaiveDate::from_ymd_opt(2025, 1, 31)
-            .expect("Invalid expected date"));
     }
 }

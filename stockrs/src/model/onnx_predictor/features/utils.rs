@@ -1,6 +1,9 @@
 use crate::utility::errors::{StockrsError, StockrsResult};
 use rusqlite::Connection;
-use tracing::debug;
+use std::collections::HashSet;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::sync::OnceLock;
 
 /// EMA (지수이동평균) 계산 함수
 pub fn calculate_ema(prices: &[f64], period: usize) -> f64 {
@@ -82,8 +85,7 @@ pub fn get_morning_data(
     date: &str,
 ) -> StockrsResult<MorningData> {
     let table_name = stock_code.to_string();
-    let date_start = format!("{}0900", date);
-    let date_end = format!("{}0930", date);
+    let (date_start, date_end) = get_time_range_for_date(date);
 
     // 테이블 존재 여부 확인 (최적화된 쿼리)
     let table_exists: i64 = db
@@ -121,9 +123,10 @@ pub fn get_morning_data(
         })?;
 
     if data_exists == 0 {
+        let time_range = if is_special_trading_date(date) { "10시~10시반" } else { "9시~9시반" };
         return Err(StockrsError::database_query(format!(
-            "9시반 이전 데이터가 없습니다: {} (종목: {}, 범위: {} ~ {})",
-            stock_code, table_name, date_start, date_end
+            "{} 이전 데이터가 없습니다: {} (종목: {}, 범위: {} ~ {})",
+            time_range, stock_code, table_name, date_start, date_end
         )));
     }
 
@@ -239,94 +242,17 @@ pub fn get_daily_data(
     Ok(DailyData { closes })
 }
 
-/// 거래일 리스트를 조회하는 함수 - 최적화됨
-pub fn get_trading_dates_list(db: &Connection) -> StockrsResult<Vec<String>> {
-    // 먼저 answer_v3 테이블이 있는지 확인
-    let table_exists: i64 = db
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = 'answer_v3'",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|_| {
-            StockrsError::database_query("answer_v3 테이블 존재 여부 확인 실패".to_string())
-        })?;
-
-    if table_exists > 0 {
-        // answer_v3 테이블이 있으면 사용
-        let query = "SELECT DISTINCT date FROM answer_v3 ORDER BY date";
-
-        let mut stmt = db.prepare(query)?;
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-
-        // 벡터 사전 할당으로 메모리 최적화
-        let mut trading_dates = Vec::new();
-
-        for row in rows {
-            let date = row?;
-            trading_dates.push(date);
-        }
-
-        debug!(
-            "answer_v3에서 거래일 리스트 로드 완료: {}개",
-            trading_dates.len()
-        );
-        return Ok(trading_dates);
-    }
-
-    // answer_v3 테이블이 없으면 사용 가능한 테이블에서 거래일 추출
-    let tables_query = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'answer_%'";
-    let mut stmt = db.prepare(tables_query)?;
-    let tables: Vec<String> = stmt
-        .query_map([], |row| row.get::<_, String>(0))?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    if tables.is_empty() {
-        return Err(StockrsError::database_query(
-            "사용 가능한 테이블이 없습니다.".to_string(),
-        ));
-    }
-
-    // 첫 번째 테이블에서 거래일 추출 (YYYYMMDD 형식으로 변환)
-    let first_table = &tables[0];
-    let query = format!(
-        "SELECT DISTINCT date/10000 as ymd FROM \"{}\" ORDER BY ymd",
-        first_table
-    );
-
-    let mut stmt = db.prepare(&query)?;
-    let rows = stmt.query_map([], |row| {
-        let ymd = row.get::<_, i64>(0)?;
-        Ok(ymd.to_string())
-    })?;
-
-    // 벡터 사전 할당으로 메모리 최적화
-    let mut trading_dates = Vec::new();
-
-    for row in rows {
-        let date = row?;
-        trading_dates.push(date);
-    }
-
-    debug!(
-        "테이블 {}에서 거래일 리스트 로드 완료: {}개",
-        first_table,
-        trading_dates.len()
-    );
-    Ok(trading_dates)
-}
-
-/// 이전 거래일을 찾는 함수 - 최적화됨
-pub fn get_previous_trading_day(trading_dates: &[String], date: &str) -> StockrsResult<String> {
+/// 이전 거래일을 찾는 함수 - 1일봉 날짜 목록 사용
+pub fn get_previous_trading_day(day_dates: &[String], date: &str) -> StockrsResult<String> {
+    
     // 이진 탐색으로 최적화 (정렬된 배열에서)
     let mut left = 0;
-    let mut right = trading_dates.len();
+    let mut right = day_dates.len();
 
     while left < right {
         let mid = (left + right) / 2;
         let date_str = date.to_string();
-        if trading_dates[mid] < date_str {
+        if day_dates[mid] < date_str {
             left = mid + 1;
         } else {
             right = mid;
@@ -335,11 +261,65 @@ pub fn get_previous_trading_day(trading_dates: &[String], date: &str) -> Stockrs
 
     // 이전 거래일 찾기
     if left > 0 {
-        Ok(trading_dates[left - 1].clone())
+        Ok(day_dates[left - 1].clone())
     } else {
         Err(StockrsError::prediction(format!(
             "이전 거래일을 찾을 수 없습니다: {}",
             date
         )))
+    }
+}
+
+/// 특이한 거래일인지 판별하는 함수
+pub fn is_special_trading_date(date: &str) -> bool {
+    static SPECIAL_DATES: OnceLock<HashSet<String>> = OnceLock::new();
+    
+    let special_dates = SPECIAL_DATES.get_or_init(|| {
+        let mut dates = HashSet::new();
+        if let Ok(file) = File::open("data/start1000.txt") {
+            let reader = BufReader::new(file);
+            for line in reader.lines().map_while(Result::ok) {
+                dates.insert(line.trim().to_string());
+            }
+        }
+        println!("[DEBUG] 특이한 날짜 목록 로드됨: {:?}", dates);
+        dates
+    });
+    
+    special_dates.contains(date)
+}
+
+/// 첫 거래일인지 확인하는 함수
+pub fn is_first_trading_day(daily_db: &Connection, stock_code: &str, date: &str, day_dates: &[String]) -> StockrsResult<bool> {
+    // 전 거래일 가져오기
+    let previous_date = get_previous_trading_day(day_dates, date)?;
+    
+    // 전 거래일에 해당 종목 데이터가 있는지 확인
+    let table_name = stock_code;
+    let count: i64 = daily_db
+        .query_row(
+            &format!("SELECT COUNT(*) FROM \"{}\" WHERE date = ?", table_name),
+            [&previous_date],
+            |row| row.get(0),
+        )
+        .map_err(|_| {
+            StockrsError::database_query(format!(
+                "종목 {}의 전 거래일 데이터 확인 실패",
+                table_name
+            ))
+        })?;
+    
+    // 전 거래일에 데이터가 없으면 첫 거래일
+    Ok(count == 0)
+}
+
+/// 날짜에 따른 시간 범위를 반환하는 함수
+pub fn get_time_range_for_date(date: &str) -> (String, String) {
+    if is_special_trading_date(date) {
+        // 특이한 날짜: 10:00~10:30
+        (format!("{}1000", date), format!("{}1030", date))
+    } else {
+        // 일반 날짜: 09:00~09:30
+        (format!("{}0900", date), format!("{}0930", date))
     }
 }

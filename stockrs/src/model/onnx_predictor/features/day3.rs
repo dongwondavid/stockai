@@ -1,4 +1,5 @@
 use super::utils::get_morning_data;
+use super::utils::is_first_trading_day;
 use crate::utility::errors::{StockrsError, StockrsResult};
 use chrono::{Duration, NaiveDate};
 use rusqlite::Connection;
@@ -35,7 +36,13 @@ pub fn calculate_breaks_6month_high(
     daily_db: &Connection,
     stock_code: &str,
     date: &str,
+    trading_dates: &[String],
 ) -> StockrsResult<f64> {
+    // 첫 거래일인지 확인
+    if is_first_trading_day(daily_db, stock_code, date, trading_dates)? {
+        return Ok(0.0);
+    }
+
     // 날짜 파싱 (YYYYMMDD 형식)
     let year = date[..4].parse::<i32>().map_err(|_| {
         StockrsError::prediction(format!("잘못된 연도 형식: {}", date))

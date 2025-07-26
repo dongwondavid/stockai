@@ -1,4 +1,4 @@
-use super::utils::{get_morning_data, get_previous_trading_day};
+use super::utils::{get_morning_data, get_previous_trading_day, is_first_trading_day};
 use crate::utility::errors::{StockrsError, StockrsResult};
 use rusqlite::Connection;
 use tracing::debug;
@@ -10,6 +10,11 @@ pub fn calculate_prev_day_range_ratio(
     date: &str,
     trading_dates: &[String],
 ) -> StockrsResult<f64> {
+    // 첫 거래일인지 확인
+    if is_first_trading_day(daily_db, stock_code, date, trading_dates)? {
+        return Ok(1.0);
+    }
+
     // 주식 시장이 열린 날 기준으로 전일 계산
     let prev_date_str = get_previous_trading_day(trading_dates, date)?;
     debug!("전일 날짜: {}", prev_date_str);
@@ -91,6 +96,11 @@ pub fn calculate_prev_close_to_now_ratio(
     date: &str,
     trading_dates: &[String],
 ) -> StockrsResult<f64> {
+    // 첫 거래일인지 확인
+    if is_first_trading_day(daily_db, stock_code, date, trading_dates)? {
+        return Ok(1.0);
+    }
+
     // 주식 시장이 열린 날 기준으로 전일 계산
     let prev_date_str = get_previous_trading_day(trading_dates, date)?;
     debug!("전일 날짜: {}", prev_date_str);

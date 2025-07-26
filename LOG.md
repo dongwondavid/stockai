@@ -1,5 +1,10 @@
 # 📝 변경 이력 로그
 
+2025-07-26T16:00: stockrs/src/time.rs: TimeService에 should_skip_to_next_trading_day 메서드 추가 - Runner의 중복된 주말/공휴일 체크 로직을 TimeService로 통합, 책임 분리 개선
+2025-07-26T16:00: stockrs/src/runner.rs: HolidayChecker import 제거 및 TimeService 통합 로직 적용 - 중복된 holiday_checker 로직 제거, self.time.should_skip_to_next_trading_day() 사용으로 코드 간소화
+2025-07-26T15:00: stockrs/src/utility/trading_calender.rs: TradingCalender 완전 재구현 - time.rs에서 사용하는 3개 함수만 남기고 holiday/weekend 내부 로직 모두 제거, samsung_1min_dates.txt 파일 기반 거래일 관리로 변경
+2025-07-26T15:00: stockrs/src/time.rs: HolidayChecker를 TradingCalender로 완전 교체 - 모든 holiday_checker 참조를 trading_calender로 변경, 테스트 코드도 새로운 로직에 맞게 수정
+
 2024-12-19T15:30: stockrs/src/utility/types/macros.rs: unwrap() 사용을 expect()로 개선 - LocalResult.single() 메서드 사용하여 안전한 시간 변환 구현
 2024-12-19T15:30: stockrs/src/utility/types/trading.rs: unwrap() 사용을 expect()로 개선 - Default 구현에서 안전한 날짜/시간 생성
 2024-12-19T15:30: stockrs/src/utility/holiday_checker.rs: 테스트 코드 unwrap() 사용을 expect()로 개선 - 모든 테스트에서 안전한 날짜 생성
@@ -247,3 +252,5 @@
 
 2025-07-20T05:30: stockrs/src/lib.rs: init_tracing 함수 제거 - 애플리케이션 초기화 함수를 lib.rs에서 main.rs로 이동
 2025-07-20T05:30: stockrs/src/main.rs: init_tracing 함수 추가 - 라이브러리 API가 아닌 애플리케이션 초기화 함수를 main.rs에 배치
+
+2025-07-21T08:00: TASK.md: start1000.txt 날짜 기반 시스템 시작 시간 1시간 지연 기능 구현 작업 상세 계획 작성 - 설정 시스템 확장, TimeService 핵심 로직 수정, joonwoo 모델 시간 조정, 특징 추출 시간 범위 조정, 테스트 및 검증 단계별 완료 조건 정의

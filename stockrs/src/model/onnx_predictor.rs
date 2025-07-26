@@ -17,7 +17,7 @@ use crate::utility::apis::korea_api::KoreaApi;
 use crate::utility::config::get_config;
 use crate::utility::errors::{StockrsError, StockrsResult};
 use crate::utility::types::trading::TradingMode;
-use features::{calculate_features_for_stock_optimized, get_trading_dates_list};
+use features::{calculate_features_for_stock_optimized};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StockFeatures {
@@ -59,6 +59,7 @@ impl ONNXPredictor {
         let model_info_path = &config.onnx_model.model_info_path;
         let extra_stocks_path = &config.onnx_model.extra_stocks_file_path;
         let features_path = &config.onnx_model.features_file_path;
+        let trading_dates_path = &config.time_management.trading_dates_file_path;
 
         // 모델 정보 로드
         let model_info = Self::load_model_info(model_info_path)?;
@@ -93,12 +94,27 @@ impl ONNXPredictor {
             features.len(),
             extra_stocks_set.len()
         );
+        
+        // 1일봉 날짜 목록 로드
+        let file = File::open(trading_dates_path)
+            .map_err(|e| StockrsError::prediction(format!("1일봉 날짜 파일 읽기 실패: {}", e)))?;
+        
+        let reader = BufReader::new(file);
+        let mut trading_dates: Vec<String> = Vec::new();
+        
+        for line in reader.lines() {
+            let line = line.map_err(|e| StockrsError::prediction(format!("파일 읽기 오류: {}", e)))?;
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                trading_dates.push(trimmed.to_string());
+            }
+        }
 
         Ok(ONNXPredictor {
             session,
             features,
             extra_stocks_set,
-            trading_dates: Vec::new(), // 나중에 DB에서 로드
+            trading_dates,
             trading_mode,
         })
     }
@@ -117,8 +133,9 @@ impl ONNXPredictor {
 
         // 거래일 리스트가 없으면 로드 (백테스팅 모드에서만 필요)
         if self.trading_mode == TradingMode::Backtest && self.trading_dates.is_empty() {
-            self.trading_dates = get_trading_dates_list(db)?;
-            debug!("거래일 리스트 로드 완료: {}개", self.trading_dates.len());
+            return Err(StockrsError::prediction(
+                "거래일 리스트가 없습니다".to_string(),
+            ));
         }
 
         // 투자 모드에 따라 거래대금 상위 30개 종목 조회

@@ -6,7 +6,7 @@ use crate::model::{ApiBundle, Model};
 use crate::time::TimeService;
 use crate::utility::types::api::{ApiType, SharedApi};
 use crate::utility::config;
-use crate::utility::holiday_checker::HolidayChecker;
+
 use chrono::Timelike;
 
 /// API 구성 정보
@@ -283,15 +283,8 @@ impl Runner {
             }
         }
 
-        // 통합된 "다음 거래일로 이동해야 하는 상황" 체크 - 최적화됨
-        let current_date = current_time.date_naive();
-        let mut holiday_checker = HolidayChecker::default();
-        let is_weekend = holiday_checker.is_weekend(current_date);
-        let is_holiday = holiday_checker.is_holiday(current_date);
-
-        // Overnight 신호는 이미 TimeService에서 다음 거래일로 이동했으므로 제외
-        let should_skip_to_next_day =
-            (is_weekend || is_holiday) && current_signal != TimeSignal::Overnight;
+        // 통합된 "다음 거래일로 이동해야 하는 상황" 체크 - TimeService로 통합
+        let should_skip_to_next_day = self.time.should_skip_to_next_trading_day();
 
         if should_skip_to_next_day {
             // TimeService의 다음 거래일로 이동 메서드 사용
