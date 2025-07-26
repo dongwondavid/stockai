@@ -142,10 +142,10 @@ impl DbApi {
     }
 
     /// 거래대금 상위 종목 조회 (predict_top_stocks.rs와 동일한 구현) - 5분봉 DB 사용
-    pub fn get_top_amount_stocks(&self, date: &str, limit: usize) -> StockrsResult<Vec<String>> {
+    pub fn get_top_amount_stocks(&self, date: &str, limit: usize, date_start: &str, date_end: &str) -> StockrsResult<Vec<String>> {
         debug!(
-            "🔍 [DbApi::get_top_amount_stocks] 거래대금 상위 종목 조회 시작: 날짜={}, limit={}",
-            date, limit
+            "🔍 [DbApi::get_top_amount_stocks] 거래대금 상위 종목 조회 시작: 날짜={}, limit={}, 시간대: {}~{}",
+            date, limit, date_start, date_end
         );
 
         // 모든 테이블(종목) 목록 가져오기 (5분봉 DB)
@@ -171,10 +171,6 @@ impl DbApi {
         );
 
         let mut stock_volumes: Vec<(String, i64)> = Vec::new();
-
-        // 각 종목의 거래대금 계산 (9시~9시반)
-        let date_start = format!("{}0900", date);
-        let date_end = format!("{}0930", date);
 
         debug!(
             "⏰ [DbApi::get_top_amount_stocks] 조회 시간대: {} ~ {}",

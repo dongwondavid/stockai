@@ -1,5 +1,10 @@
 # 📝 변경 이력 로그
 
+2025-07-26T16:15: TASK.md: start1000.txt 날짜 기반 시스템 시작 시간 1시간 지연 기능 구현 완료 - TASK.md에서 COMPLETE.md로 이동, 모든 Phase 완료 확인
+2025-07-26T16:10: TASK.md: start1000.txt 날짜 기반 시스템 시작 시간 1시간 지연 기능 구현 완료 - Phase 1-4 모든 단계 완료, 설정 시스템 확장부터 특징 추출 시간 범위 조정까지 전체 기능 구현 완료
+
+2025-07-26T16:05: stockrs/src/time.rs: parse_time_string 함수 NaiveDateTime iterator 오류 수정 - date.and_time() 반환값 처리 로직 개선, 변수 할당 구조 정리하여 컴파일 오류 해결
+
 2025-07-26T16:00: stockrs/src/time.rs: TimeService에 should_skip_to_next_trading_day 메서드 추가 - Runner의 중복된 주말/공휴일 체크 로직을 TimeService로 통합, 책임 분리 개선
 2025-07-26T16:00: stockrs/src/runner.rs: HolidayChecker import 제거 및 TimeService 통합 로직 적용 - 중복된 holiday_checker 로직 제거, self.time.should_skip_to_next_trading_day() 사용으로 코드 간소화
 2025-07-26T15:00: stockrs/src/utility/trading_calender.rs: TradingCalender 완전 재구현 - time.rs에서 사용하는 3개 함수만 남기고 holiday/weekend 내부 로직 모두 제거, samsung_1min_dates.txt 파일 기반 거래일 관리로 변경
@@ -23,7 +28,7 @@
 2025-07-21T13:38: TASK.md: Clippy 경고 해결 작업 세부 조건 추가 (21개 경고 분석)
 2025-07-21T13:38: COMPLETE.md: TODO/TASK 상태 업데이트 완료 작업 추가
 
-2025-07-21T09:00: stockrs/src/: 파일 구조 변경으로 인한 import 경로 수정 완료 - 모든 파일에서 crate::errors, crate::apis, crate::config, crate::types, crate::holiday_checker를 crate::utility::* 경로로 수정, day1~day4 prediction 파일들에서 use 구문을 사용하여 StockrsError 간소화, main.rs import 경로 수정, local_time 매크로 import 추가, 사용하지 않는 import 제거로 경고 해결
+2025-07-21T09:00: stockrs/src/time.rs: TimeService에 special_start_dates(HashSet) 및 오프셋 필드 추가, 파일 로드 및 is_special_start_date/parse_time_string/compute_next_time에서 오프셋 적용 로직 구현, 특별 날짜에만 시간 지연 반영
 
 2025-07-21T08:20: config.example.toml: joonwoo 모델 전용 설정 섹션 추가 - 손절매/익절매/추가손절매 비율, 매수/강제정리 시간, 자산비율 설정 추가
 2025-07-21T08:20: stockrs/src/config.rs: JoonwooConfig 구조체 추가 - joonwoo 모델 설정을 위한 새로운 구조체 정의, Config 구조체에 joonwoo 필드 추가, 유효성 검증 로직 추가
@@ -121,6 +126,8 @@
 2025-07-20T06:30: stockrs/src/runner.rs: 백테스팅 모드에서 DbApi에 현재 시간 설정 로직 추가 - TimeService의 현재 시간을 DB 형식(%Y%m%d%H%M)으로 변환하여 DbApi.set_current_time() 호출
 
 2025-07-20T06:30: stockrs/src/apis/db_api.rs: SQL 오류 처리 개선 - 실제 SQL 쿼리가 실행된 정확한 라인과 SQL 쿼리 자체를 출력하도록 수정 (get_current_price_from_db, get_current_price_from_db_latest, get_top_amount_stocks, debug_db_structure 함수)
+2025-07-20T06:30: stockrs/src/model/onnx_predictor.rs: 백테스트 시 특이 거래일에 맞는 시간대를 넘기도록 수정 (get_time_range_for_date 사용)
+2025-07-20T06:30: stockrs/src/utility/apis/db_api.rs: get_top_amount_stocks 함수가 시간대를 인자로 받아 유연하게 거래대금 계산이 가능하도록 리팩터링
 
 2025-07-20T05:22: stockrs/src/runner.rs: 불필요한 로그 출력 제거 - 현재 시각, 공휴일/주말, 다음 거래일 이동, 객체 리셋 등 자주 출력되는 로그들 제거
 2025-07-20T05:22: stockrs/src/model/joonwoo.rs: 불필요한 로그 출력 제거 - 매수 시도, 현재가 조회, 손익 체크 등 자주 출력되는 로그들 제거, 매수/매도 핵심 정보만 출력
@@ -253,4 +260,9 @@
 2025-07-20T05:30: stockrs/src/lib.rs: init_tracing 함수 제거 - 애플리케이션 초기화 함수를 lib.rs에서 main.rs로 이동
 2025-07-20T05:30: stockrs/src/main.rs: init_tracing 함수 추가 - 라이브러리 API가 아닌 애플리케이션 초기화 함수를 main.rs에 배치
 
-2025-07-21T08:00: TASK.md: start1000.txt 날짜 기반 시스템 시작 시간 1시간 지연 기능 구현 작업 상세 계획 작성 - 설정 시스템 확장, TimeService 핵심 로직 수정, joonwoo 모델 시간 조정, 특징 추출 시간 범위 조정, 테스트 및 검증 단계별 완료 조건 정의
+2025-07-21T08:30: stockrs/src/utility/config.rs: TimeManagementConfig 구조체 확장 - special_start_dates_file_path, special_start_time_offset_minutes 필드 추가, 설정 유효성 검증 로직 추가
+2025-07-21T08:30: config.example.toml: 특별한 시작 시간 설정 섹션 추가 - special_start_dates_file_path, special_start_time_offset_minutes 설정 및 주석 추가
+2025-07-21T08:30: stockrs/src/utility/config.rs: 환경 변수 오버라이드 로직 추가 - SPECIAL_START_DATES_FILE_PATH, SPECIAL_START_TIME_OFFSET_MINUTES 환경 변수 지원
+2025-07-21T08:30: TASK.md: Phase 1 설정 시스템 확장 완료 체크 - config.example.toml 설정 추가, TimeManagementConfig 구조체 확장, 기본값 설정 및 로드 로직 구현 완료
+
+2025-07-21T09:30: stockrs/src/model/joonwoo.rs: 특별한 날짜에 entry_time/force_close_time 오프셋 적용 - get_entry_time_for_today, get_force_close_time_for_today 헬퍼 추가, try_entry/force_close_all/on_event 등에서 오프셋 반영

@@ -259,7 +259,7 @@ impl Runner {
             let minute = current_time.minute();
 
             if hour == 15 && minute == 20 {
-                println!("📊 [Runner] 장 마감 시점 - 당일 overview 마감 처리");
+                // println!("📊 [Runner] 장 마감 시점 - 당일 overview 마감 처리");
 
                 // 백테스팅 모드에서는 현재 시간을 전달
                 let current_time_str = if self.api_type == ApiType::Backtest {
@@ -279,7 +279,7 @@ impl Runner {
                     )));
                 }
 
-                println!("✅ [Runner] 당일 overview 마감 완료");
+                // println!("✅ [Runner] 당일 overview 마감 완료");
             }
         }
 

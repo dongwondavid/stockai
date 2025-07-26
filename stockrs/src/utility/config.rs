@@ -102,6 +102,10 @@ pub struct TimeManagementConfig {
     pub event_check_interval: u64,
     pub start_date: String,
     pub end_date: String,
+    // 특별한 시작 시간이 적용되는 날짜 파일 경로
+    pub special_start_dates_file_path: String,
+    // 특별한 날짜들의 시간 오프셋 (분 단위, 양수는 늦춤, 음수는 앞당김)
+    pub special_start_time_offset_minutes: i32,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -200,6 +204,16 @@ impl Config {
         if let Ok(level) = std::env::var("RUST_LOG") {
             self.logging.level = level;
         }
+
+        // 특별한 시작 시간 설정
+        if let Ok(path) = std::env::var("SPECIAL_START_DATES_FILE_PATH") {
+            self.time_management.special_start_dates_file_path = path;
+        }
+        if let Ok(offset) = std::env::var("SPECIAL_START_TIME_OFFSET_MINUTES") {
+            if let Ok(offset_value) = offset.parse::<i32>() {
+                self.time_management.special_start_time_offset_minutes = offset_value;
+            }
+        }
     }
 
     /// 설정 유효성 검증
@@ -286,6 +300,13 @@ impl Config {
                         .to_string(),
                 ))
             }
+        }
+
+        // 특별한 시작 시간 설정 검증
+        if self.time_management.special_start_time_offset_minutes < -1440 || self.time_management.special_start_time_offset_minutes > 1440 {
+            return Err(ConfigError::ValidationError(
+                "special_start_time_offset_minutes는 -1440~1440 사이여야 합니다 (24시간 범위)".to_string(),
+            ));
         }
 
         // API 키 검증 (실제 거래 모드일 때)
@@ -434,6 +455,8 @@ mod tests {
                 event_check_interval: 30,
                 start_date: "20241201".to_string(),
                 end_date: "20241231".to_string(),
+                special_start_dates_file_path: "data/start1000.txt".to_string(),
+                special_start_time_offset_minutes: 60,
             },
             market_hours: MarketHoursConfig {
                 data_prep_time: "08:30:00".to_string(),

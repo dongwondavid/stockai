@@ -111,6 +111,37 @@ impl JoonwooModel {
         Ok((hour, minute))
     }
 
+    /// 오늘 날짜 기준 entry_time에 오프셋을 적용한 (hour, minute) 반환
+    fn get_entry_time_for_today(&self, time: &TimeService) -> Result<(u32, u32), Box<dyn Error>> {
+        let (mut hour, mut minute) = self.parse_time_string(&self.entry_time_str)?;
+        let date = time.now().date_naive();
+        if time.is_special_start_date(date) {
+            let offset = time.special_start_time_offset_minutes;
+            let total_minutes = hour as i32 * 60 + minute as i32 + offset;
+            if total_minutes < 0 || total_minutes >= 24 * 60 {
+                return Err(format!("entry_time 오프셋 적용 결과가 0~24시 범위를 벗어남: {}분", total_minutes).into());
+            }
+            hour = (total_minutes / 60) as u32;
+            minute = (total_minutes % 60) as u32;
+        }
+        Ok((hour, minute))
+    }
+    /// 오늘 날짜 기준 force_close_time에 오프셋을 적용한 (hour, minute) 반환
+    fn get_force_close_time_for_today(&self, time: &TimeService) -> Result<(u32, u32), Box<dyn Error>> {
+        let (mut hour, mut minute) = self.parse_time_string(&self.force_close_time_str)?;
+        let date = time.now().date_naive();
+        if time.is_special_start_date(date) {
+            let offset = time.special_start_time_offset_minutes;
+            let total_minutes = hour as i32 * 60 + minute as i32 + offset;
+            if total_minutes < 0 || total_minutes >= 24 * 60 {
+                return Err(format!("force_close_time 오프셋 적용 결과가 0~24시 범위를 벗어남: {}분", total_minutes).into());
+            }
+            hour = (total_minutes / 60) as u32;
+            minute = (total_minutes % 60) as u32;
+        }
+        Ok((hour, minute))
+    }
+
     /// 매수 시도 (설정된 시간) - 최적화됨
     fn try_entry(
         &mut self,
@@ -125,7 +156,7 @@ impl JoonwooModel {
         let current_time = time.now();
 
         // 설정된 매수 시간 확인
-        let (entry_hour, entry_minute) = self.parse_time_string(&self.entry_time_str)?;
+        let (entry_hour, entry_minute) = self.get_entry_time_for_today(time)?;
         if current_time.hour() != entry_hour || current_time.minute() != entry_minute {
             debug!("매수 시간이 아닙니다: {}:{} (설정: {}:{:02})", 
                 current_time.hour(), current_time.minute(), entry_hour, entry_minute);
@@ -269,7 +300,7 @@ impl JoonwooModel {
         if let Some(ref stock_code) = self.current_stock {
             if self.remaining_size > 0 {
                 // 설정된 강제 정리 시간 확인
-                let (force_close_hour, force_close_minute) = self.parse_time_string(&self.force_close_time_str)?;
+                let (force_close_hour, force_close_minute) = self.get_force_close_time_for_today(time)?;
                 let current_time = time.now();
                 
                 if current_time.hour() == force_close_hour && current_time.minute() == force_close_minute {
@@ -402,7 +433,7 @@ impl Model for JoonwooModel {
         let minute = current_time.minute();
 
         // 설정된 시간에 따른 로직 분기
-        let (entry_hour, entry_minute) = match self.parse_time_string(&self.entry_time_str) {
+        let (entry_hour, entry_minute) = match self.get_entry_time_for_today(time) {
             Ok((h, m)) => (h, m),
             Err(e) => {
                 warn!("매수 시간 파싱 실패: {}", e);
@@ -410,7 +441,7 @@ impl Model for JoonwooModel {
             }
         };
 
-        let (force_close_hour, force_close_minute) = match self.parse_time_string(&self.force_close_time_str) {
+        let (force_close_hour, force_close_minute) = match self.get_force_close_time_for_today(time) {
             Ok((h, m)) => (h, m),
             Err(e) => {
                 warn!("강제 정리 시간 파싱 실패: {}", e);

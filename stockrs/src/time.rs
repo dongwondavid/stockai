@@ -4,6 +4,8 @@ use crate::utility::config;
 use crate::local_time;
 use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, TimeZone};
 use std::thread;
+use std::collections::HashSet;
+use std::fs;
 
 /// Signals corresponding to specific time events within the trading day
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -32,6 +34,9 @@ pub struct TimeService {
     cache_duration: std::time::Duration,
     // 거래 캘린더
     trading_calender: TradingCalender,
+    // 특별한 시작 날짜 집합
+    special_start_dates: HashSet<String>,
+    pub special_start_time_offset_minutes: i32,
 }
 
 impl TimeService {
@@ -99,6 +104,24 @@ impl TimeService {
             })
         };
 
+        // 특별한 날짜 파일 로드
+        let (special_start_dates, special_start_time_offset_minutes) = if let Ok(config) = config::get_config() {
+            let path = &config.time_management.special_start_dates_file_path;
+            let offset = config.time_management.special_start_time_offset_minutes;
+            let mut set = HashSet::new();
+            if let Ok(content) = fs::read_to_string(path) {
+                for line in content.lines() {
+                    let date = line.trim();
+                    if !date.is_empty() {
+                        set.insert(date.to_string());
+                    }
+                }
+            }
+            (set, offset)
+        } else {
+            (HashSet::new(), 0)
+        };
+
         let mut service = TimeService {
             current: start_time?,
             current_signal: TimeSignal::DataPrep,
@@ -106,6 +129,8 @@ impl TimeService {
             cache_timestamp: None,
             cache_duration: std::time::Duration::from_secs(1), // 1초 캐시
             trading_calender: TradingCalender::new().unwrap_or_default(),
+            special_start_dates,
+            special_start_time_offset_minutes,
         };
         let (next_time, signal) = service.compute_next_time();
         service.current = next_time;
@@ -325,12 +350,18 @@ impl TimeService {
             })?;
         
         let naive_datetime = date.and_time(time);
-        Local.from_local_datetime(&naive_datetime)
+        let adjusted_datetime = if self.is_special_start_date(date) {
+            naive_datetime + chrono::Duration::minutes(self.special_start_time_offset_minutes as i64)
+        } else {
+            naive_datetime
+        };
+        
+        Local.from_local_datetime(&adjusted_datetime)
             .single()
             .ok_or_else(|| {
                 StockrsError::Time {
                     operation: "로컬 시간 변환".to_string(),
-                    reason: format!("로컬 시간 변환 실패: {}", naive_datetime),
+                    reason: format!("로컬 시간 변환 실패: {}", adjusted_datetime),
                 }
             })
     }
@@ -424,6 +455,11 @@ impl TimeService {
         let is_overnight = self.current_signal == TimeSignal::Overnight;
         
         is_non_trading && !is_overnight
+    }
+
+    pub fn is_special_start_date(&self, date: NaiveDate) -> bool {
+        let ymd = date.format("%Y%m%d").to_string();
+        self.special_start_dates.contains(&ymd)
     }
 }
 

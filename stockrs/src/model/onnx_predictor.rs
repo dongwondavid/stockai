@@ -147,8 +147,9 @@ impl ONNXPredictor {
             }
             TradingMode::Backtest => {
                 // 백테스팅: DB에서 과거 데이터로 거래대금 계산
+                let (date_start, date_end) = crate::model::onnx_predictor::features::utils::get_time_range_for_date(date);
                 let db_api = DbApi::new()?;
-                db_api.get_top_amount_stocks(date, 30)?
+                db_api.get_top_amount_stocks(date, 30, &date_start, &date_end)?
             }
         };
 

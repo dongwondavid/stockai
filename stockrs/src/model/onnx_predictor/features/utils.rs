@@ -282,7 +282,6 @@ pub fn is_special_trading_date(date: &str) -> bool {
                 dates.insert(line.trim().to_string());
             }
         }
-        println!("[DEBUG] 특이한 날짜 목록 로드됨: {:?}", dates);
         dates
     });
     

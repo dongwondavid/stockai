@@ -112,6 +112,13 @@ start_date = "20240101"
 # 백테스팅: 백테스트 종료일, 실전/모의: 거래 종료일
 end_date = "20240621"
 
+# ====== 특별한 시작 시간 설정 ======
+# 특별한 시작 시간이 적용되는 날짜 파일 경로
+special_start_dates_file_path = "data/start1000.txt"
+# 특별한 날짜들의 시간 오프셋 (분 단위, 양수는 늦춤, 음수는 앞당김)
+# 60분 = 1시간 늦춤, -60분 = 1시간 앞당김
+special_start_time_offset_minutes = 60
+
 [market_hours]
 # 데이터 준비 시작 시간 (24시간 형식)
 data_prep_time = "08:30:00"
