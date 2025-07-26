@@ -1,5 +1,13 @@
 # 📝 변경 이력 로그
 
+2025-07-26T20:43: stockrs/src/model/onnx_predictor.rs: 예측 결과가 없을 때 처리 개선 - 확률이 0.5 미만인 경우 매수하지 않도록 수정, 예측 실패 시 명확한 로그 메시지 추가
+2025-07-26T20:43: stockrs/src/model/joonwoo.rs: 예측 실패 시 매수하지 않도록 처리 개선 - try_entry 함수에서 예측 실패 시 None 반환하여 매수 주문 생성하지 않음
+2025-07-26T20:43: stockrs/src/db_manager.rs: 거래 기록이 없을 때 처리 개선 - finish_overview 함수에서 거래 기록이 없는 경우 기본값(0) 사용, 에러 대신 정상 처리
+
+2025-01-27T10:35: config.example.toml: 자동 날짜 설정 옵션 추가 - auto_set_dates_from_file 설정 추가, trading_dates_file_path에서 자동으로 시작/종료 날짜 설정 가능하도록 기능 구현
+2025-01-27T10:35: stockrs/src/utility/config.rs: TimeManagementConfig에 auto_set_dates_from_file 필드 추가 - 자동 날짜 설정 기능을 위한 새로운 필드 추가, is_valid_date_format 메서드 구현, 설정 유효성 검증 로직 개선
+
+2025-07-26T20:22: stockrs/src/model/onnx_predictor.rs: ONNX 모델 출력 처리 로직 개선 - outputs[0]에서 클래스 정보 먼저 확인하여 클래스 0인 경우 결과에 추가하지 않도록 수정, 클래스 1인 경우에만 확률 추출 및 결과 추가
 2025-07-26T18:14: TASK.md: onnx_predictor 간단한 버전으로 작성 작업 완료 - TASK.md에서 COMPLETE.md로 이동, 모든 작업 완료 확인
 2025-07-26T18:14: COMPLETE.md: onnx_predictor 간단한 버전으로 작성 완료 작업 추가 - rust_model_info.json 삭제, extra_stocks.txt 대신 stocks.txt 사용, onnx 실행가능하게 만들기, config 정리 완료
 2025-07-26T16:20: stockrs/src/model/onnx_predictor.rs: 필터링 후 15개 초과시 상위 15개만 사용하는 로직 추가 - final_stocks 변수 도입, take(15) 메서드로 순위 기반 제한, 디버그 로그 추가
@@ -276,3 +284,8 @@
 2025-07-21T09:30: stockrs/src/model/joonwoo.rs: 특별한 날짜에 entry_time/force_close_time 오프셋 적용 - get_entry_time_for_today, get_force_close_time_for_today 헬퍼 추가, try_entry/force_close_all/on_event 등에서 오프셋 반영
 
 2024-06-09: stockrs/src/model/onnx_predictor.rs, stockrs/src/utility/config.rs: rust_model_info.json 완전 제거 - ONNXModelInfo 구조체 삭제, model_file_path 직접 사용, 환경변수 ONNX_MODEL_FILE_PATH로 변경, 테스트 코드 수정
+
+2025-01-27T10:30: config.example.toml: market_close_file_path 설정 제거 - deprecated된 HolidayChecker 관련 설정 삭제, TradingCalender로 완전 교체됨
+2025-01-27T10:30: stockrs/src/utility/config.rs: market_close_file_path 필드 제거 - TimeManagementConfig에서 사용하지 않는 필드 삭제
+
+2025-01-27T10:50: stockrs/src/utility/config.rs: auto_set_dates_from_file이 true일 때 trading_dates_file_path에서 시작/종료 날짜를 자동으로 읽어와 start_date, end_date에 반영하는 로직 구현

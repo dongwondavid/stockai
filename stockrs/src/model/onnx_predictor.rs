@@ -194,6 +194,7 @@ impl ONNXPredictor {
             );
             Ok(best_stock.stock_code.clone())
         } else {
+            info!("🔮 [ONNX] 예측 결과가 없습니다 - 매수하지 않음");
             Err(StockrsError::prediction("예측 결과가 없습니다".to_string()))
         }
     }
@@ -296,7 +297,41 @@ impl ONNXPredictor {
                 .run(vec![input_tensor])
                 .map_err(|e| StockrsError::prediction(format!("ONNX 모델 실행 실패: {}", e)))?;
 
-            // 5. 두 번째 출력에서 확률 추출
+            // 5. 첫 번째 출력에서 클래스 정보 확인
+            let class_output = &outputs[0];
+            let predicted_class = if let Ok(class_tensor) = class_output.try_extract::<i64>() {
+                let view = class_tensor.view();
+                let slice = view.as_slice().ok_or_else(|| {
+                    StockrsError::prediction(format!(
+                        "클래스 텐서 슬라이스 추출 실패 (종목: {})",
+                        stock_data.stock_code
+                    ))
+                })?;
+
+                if slice.is_empty() {
+                    return Err(StockrsError::prediction(format!(
+                        "빈 클래스 텐서 (종목: {})",
+                        stock_data.stock_code
+                    )));
+                }
+                slice[0]
+            } else {
+                return Err(StockrsError::prediction(format!(
+                    "클래스 텐서 추출 실패 (종목: {})",
+                    stock_data.stock_code
+                )));
+            };
+
+            // 클래스가 0이면 결과에 추가하지 않음
+            if predicted_class == 0 {
+                debug!(
+                    "종목 {} 예측 결과: 클래스 0 (매수하지 않음)",
+                    stock_data.stock_code
+                );
+                continue;
+            }
+
+            // 6. 두 번째 출력에서 확률 추출
             let output_value = &outputs[1];
 
             let probability = if let Ok(output_tensor) = output_value.try_extract::<f32>() {

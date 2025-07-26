@@ -180,9 +180,14 @@ impl JoonwooModel {
             .ok_or("일봉 DB 연결을 가져올 수 없습니다")?;
 
         let today_str = TimeService::format_local_ymd(&current_time);
-        let target_stock = predictor
-            .predict_top_stock(&today_str, &db, &daily_db)
-            .map_err(|e| Box::new(e) as Box<dyn Error>)?;
+        let target_stock = match predictor.predict_top_stock(&today_str, &db, &daily_db) {
+            Ok(stock) => stock,
+            Err(e) => {
+                warn!("🔮 [joonwoo] 예측 실패: {} - 매수하지 않음", e);
+                // 예측 실패 시 매수하지 않고 None 반환
+                return Ok(None);
+            }
+        };
 
         // 현재가 조회 (시간 기반) - 최적화됨
         let current_time_str = TimeService::format_local_ymdhm(&current_time);

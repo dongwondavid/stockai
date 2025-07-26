@@ -449,25 +449,14 @@ impl DBManager {
             }
         };
 
-        // Update with new values
-        let fee = fee_sum.ok_or_else(|| {
-            rusqlite::Error::SqliteFailure(
-                rusqlite::ffi::Error::new(1),
-                Some("수수료 합계 조회 실패".to_string()),
-            )
-        })?;
-        let turnover = turnover_sum.ok_or_else(|| {
-            rusqlite::Error::SqliteFailure(
-                rusqlite::ffi::Error::new(1),
-                Some("거래대금 합계 조회 실패".to_string()),
-            )
-        })?;
-        let volume = volume_sum.ok_or_else(|| {
-            rusqlite::Error::SqliteFailure(
-                rusqlite::ffi::Error::new(1),
-                Some("거래량 합계 조회 실패".to_string()),
-            )
-        })?;
+        // 거래 기록이 없는 경우 기본값 사용
+        let fee = fee_sum.unwrap_or(0.0);
+        let turnover = turnover_sum.unwrap_or(0.0);
+        let volume = volume_sum.unwrap_or(0);
+
+        if volume == 0 {
+            info!("📊 [DBManager::finish_overview] 당일 거래 기록이 없습니다 - 기본값으로 처리");
+        }
 
         self.conn.execute(
             "UPDATE overview SET close = ?, profit = ?, roi = ?, fee = ?, turnover = ?, volume = ? WHERE date = ?",

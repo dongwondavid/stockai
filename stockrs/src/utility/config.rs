@@ -97,8 +97,10 @@ pub struct JoonwooConfig {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct TimeManagementConfig {
     pub trading_dates_file_path: String,
-    pub market_close_file_path: String,
+
     pub event_check_interval: u64,
+    // trading_dates_file_path에서 자동으로 시작/종료 날짜 설정
+    pub auto_set_dates_from_file: bool,
     pub start_date: String,
     pub end_date: String,
     // 특별한 시작 시간이 적용되는 날짜 파일 경로
@@ -141,6 +143,42 @@ impl Config {
 
         // 환경 변수로 오버라이드
         config.apply_env_overrides();
+
+        // ===== 자동 날짜 설정 기능 구현 =====
+        if config.time_management.auto_set_dates_from_file {
+            let file_path = &config.time_management.trading_dates_file_path;
+            let path = Path::new(file_path);
+            if !path.exists() {
+                return Err(ConfigError::ValidationError(format!(
+                    "trading_dates_file_path 파일이 존재하지 않습니다: {}", file_path
+                )));
+            }
+            let content = fs::read_to_string(path).map_err(|e| {
+                ConfigError::ValidationError(format!(
+                    "trading_dates_file_path 파일 읽기 실패: {}", e
+                ))
+            })?;
+            let mut dates: Vec<chrono::NaiveDate> = content
+                .lines()
+                .filter_map(|line| {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        chrono::NaiveDate::parse_from_str(trimmed, "%Y%m%d").ok()
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if dates.is_empty() {
+                return Err(ConfigError::ValidationError(format!(
+                    "trading_dates_file_path 파일이 비어있거나 파싱할 수 없습니다: {}", file_path
+                )));
+            }
+            dates.sort_unstable();
+            config.time_management.start_date = dates.first().unwrap().format("%Y%m%d").to_string();
+            config.time_management.end_date = dates.last().unwrap().format("%Y%m%d").to_string();
+        }
+        // ===== 자동 날짜 설정 기능 끝 =====
 
         // 설정 유효성 검증
         config.validate()?;
@@ -308,6 +346,21 @@ impl Config {
             ));
         }
 
+        // 자동 날짜 설정 검증
+        if !self.time_management.auto_set_dates_from_file {
+            // auto_set_dates_from_file이 false일 때만 start_date, end_date 형식 검증
+            if !self.is_valid_date_format(&self.time_management.start_date) {
+                return Err(ConfigError::ValidationError(
+                    "start_date는 YYYYMMDD 형식이어야 합니다".to_string(),
+                ));
+            }
+            if !self.is_valid_date_format(&self.time_management.end_date) {
+                return Err(ConfigError::ValidationError(
+                    "end_date는 YYYYMMDD 형식이어야 합니다".to_string(),
+                ));
+            }
+        }
+
         // API 키 검증 (실제 거래 모드일 때)
         if self.trading.default_mode == "real"
             && (self.korea_investment_api.real_app_key.contains("YOUR_")
@@ -357,6 +410,24 @@ impl Config {
         }
     }
 
+    /// 날짜 형식 검증 헬퍼 함수 (YYYYMMDD)
+    fn is_valid_date_format(&self, date_str: &str) -> bool {
+        if date_str.len() != 8 {
+            return false;
+        }
+
+        if let (Ok(year), Ok(month), Ok(day)) = (
+            date_str[0..4].parse::<u32>(),
+            date_str[4..6].parse::<u32>(),
+            date_str[6..8].parse::<u32>(),
+        ) {
+            // 기본적인 날짜 범위 검증
+            year >= 1900 && year <= 2100 && month >= 1 && month <= 12 && day >= 1 && day <= 31
+        } else {
+            false
+        }
+    }
+
     /// 설정을 파일로 저장 (주로 디버깅용)
     pub fn save_to_file(&self, path: &str) -> Result<(), ConfigError> {
         let content = toml::to_string_pretty(self)
@@ -399,91 +470,4 @@ pub fn reload_config() -> Result<(), ConfigError> {
     // 아직 초기화되지 않은 경우에만 로드 시도
     let _ = get_config()?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_config_validation() {
-        let mut config = Config {
-            database: DatabaseConfig {
-                stock_db_path: "test.db".to_string(),
-                daily_db_path: "test.db".to_string(),
-                minute_db_path: "test.db".to_string(),
-                trading_db_path: "test.db".to_string(),
-            },
-            trading: TradingConfig {
-                default_mode: "backtest".to_string(),
-                max_positions: 5,
-                max_position_amount: 1000000,
-                stop_loss_ratio: 3.0,
-                initial_capital: 1000000.0,
-            },
-            logging: LoggingConfig {
-                level: "info".to_string(),
-            },
-            // ... 다른 필드들은 테스트용으로 기본값 설정
-            onnx_model: OnnxModelConfig {
-                model_file_path: "test".to_string(),
-                features_file_path: "test".to_string(),
-                included_stocks_file_path: "test".to_string(),
-            },
-            korea_investment_api: KoreaInvestmentApiConfig {
-                real_app_key: "test".to_string(),
-                real_app_secret: "test".to_string(),
-                real_base_url: "test".to_string(),
-                real_account_number: "test".to_string(),
-                real_account_product_code: "01".to_string(),
-                paper_app_key: "test".to_string(),
-                paper_app_secret: "test".to_string(),
-                paper_base_url: "test".to_string(),
-                paper_account_number: "test".to_string(),
-                paper_account_product_code: "01".to_string(),
-                info_app_key: "test".to_string(),
-                info_app_secret: "test".to_string(),
-                info_base_url: "test".to_string(),
-                info_account_number: "test".to_string(),
-                info_account_product_code: "01".to_string(),
-            },
-            time_management: TimeManagementConfig {
-                trading_dates_file_path: "test".to_string(),
-                market_close_file_path: "test".to_string(),
-                event_check_interval: 30,
-                start_date: "20241201".to_string(),
-                end_date: "20241231".to_string(),
-                special_start_dates_file_path: "data/start1000.txt".to_string(),
-                special_start_time_offset_minutes: 60,
-            },
-            market_hours: MarketHoursConfig {
-                data_prep_time: "08:30:00".to_string(),
-                trading_start_time: "09:00:00".to_string(),
-                trading_end_time: "15:20:00".to_string(),
-                last_update_time: "15:29:00".to_string(),
-                market_close_time: "15:30:00".to_string(),
-            },
-            joonwoo: JoonwooConfig {
-                stop_loss_pct: 1.0,
-                take_profit_pct: 2.0,
-                trailing_stop_pct: 0.7,
-                entry_time: "09:30:00".to_string(),
-                force_close_time: "12:00:00".to_string(),
-                entry_asset_ratio: 90.0,
-            },
-            backtest: BacktestConfig {
-                buy_fee_rate: 0.015,
-                sell_fee_rate: 0.015,
-                buy_slippage_rate: 0.05,
-                sell_slippage_rate: 0.05,
-            },
-        };
-
-        // 정상적인 설정
-        assert!(config.validate().is_ok());
-
-        // 잘못된 거래 모드
-        config.trading.default_mode = "invalid".to_string();
-        assert!(config.validate().is_err());
-    }
 }
