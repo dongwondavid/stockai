@@ -218,3 +218,58 @@ pub fn calculate_sixth_derivative(
         Ok(sign * (1.0 + derivative.abs()).ln())
     }
 }
+
+/// 거래량 비율 계산
+pub fn calculate_volume_ratio(db: &Connection, stock_code: &str, date: &str) -> StockrsResult<f64> {
+    let morning_data = get_morning_data(db, stock_code, date)?;
+    
+    let current_volume = morning_data.get_current_volume()
+        .ok_or_else(|| StockrsError::unsupported_feature(
+            "calculate_volume_ratio".to_string(),
+            "현재 거래량 데이터가 필요합니다".to_string(),
+        ))?;
+    
+    let avg_volume = morning_data.get_avg_volume()
+        .ok_or_else(|| StockrsError::unsupported_feature(
+            "calculate_volume_ratio".to_string(),
+            "평균 거래량 데이터가 필요합니다".to_string(),
+        ))?;
+    
+    if avg_volume > 0.0 {
+        Ok(current_volume / avg_volume)
+    } else {
+        Err(StockrsError::unsupported_feature(
+            "calculate_volume_ratio".to_string(),
+            "평균 거래량이 0입니다".to_string(),
+        ))
+    }
+}
+
+/// VWAP 위치 비율 계산
+pub fn calculate_vwap_position_ratio(db: &Connection, stock_code: &str, date: &str) -> StockrsResult<f64> {
+    let morning_data = get_morning_data(db, stock_code, date)?;
+    
+    let vwap = morning_data.get_vwap()
+        .ok_or_else(|| StockrsError::unsupported_feature(
+            "calculate_vwap_position_ratio".to_string(),
+            "VWAP 계산이 필요합니다".to_string(),
+        ))?;
+    
+    let max_high = morning_data.get_max_high()
+        .ok_or_else(|| StockrsError::unsupported_feature(
+            "calculate_vwap_position_ratio".to_string(),
+            "고가 데이터가 필요합니다".to_string(),
+        ))?;
+    
+    let min_low = morning_data.get_min_low()
+        .ok_or_else(|| StockrsError::unsupported_feature(
+            "calculate_vwap_position_ratio".to_string(),
+            "저가 데이터가 필요합니다".to_string(),
+        ))?;
+    
+    if max_high > min_low {
+        Ok((vwap - min_low) / (max_high - min_low))
+    } else {
+        Ok(0.5)
+    }
+}

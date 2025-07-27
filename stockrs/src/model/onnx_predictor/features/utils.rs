@@ -21,6 +21,41 @@ pub fn calculate_ema(prices: &[f64], period: usize) -> f64 {
     ema
 }
 
+/// RSI(상대강도지수) 계산 함수
+pub fn calculate_rsi(prices: &[f64], period: usize) -> f64 {
+    if prices.len() < period + 1 {
+        return 50.0; // 데이터가 부족하면 중립값 반환
+    }
+
+    let mut gains = Vec::new();
+    let mut losses = Vec::new();
+
+    // 가격 변화 계산
+    for i in 1..prices.len() {
+        let change = prices[i] - prices[i - 1];
+        if change > 0.0 {
+            gains.push(change);
+            losses.push(0.0);
+        } else {
+            gains.push(0.0);
+            losses.push(-change);
+        }
+    }
+
+    // 평균 이익과 손실 계산
+    let avg_gain = gains.iter().sum::<f64>() / gains.len() as f64;
+    let avg_loss = losses.iter().sum::<f64>() / losses.len() as f64;
+
+    if avg_loss == 0.0 {
+        return 100.0; // 손실이 없으면 RSI 100
+    }
+
+    let rs = avg_gain / avg_loss;
+    let rsi = 100.0 - (100.0 / (1.0 + rs));
+
+    rsi
+}
+
 /// 9시반 이전 5분봉 데이터 구조체
 #[derive(Debug)]
 pub struct MorningData {
@@ -28,6 +63,7 @@ pub struct MorningData {
     pub opens: Vec<f64>,
     pub highs: Vec<f64>,
     pub lows: Vec<f64>,
+    pub volumes: Vec<f64>,
 }
 
 impl MorningData {
@@ -64,17 +100,67 @@ impl MorningData {
             ))
         }
     }
+
+    pub fn get_current_volume(&self) -> Option<f64> {
+        self.volumes.last().copied()
+    }
+
+    pub fn get_avg_volume(&self) -> Option<f64> {
+        if self.volumes.is_empty() {
+            None
+        } else {
+            Some(self.volumes.iter().sum::<f64>() / self.volumes.len() as f64)
+        }
+    }
+
+    pub fn get_vwap(&self) -> Option<f64> {
+        if self.volumes.is_empty() || self.closes.is_empty() {
+            None
+        } else {
+            let total_volume_price: f64 = self.closes.iter()
+                .zip(self.volumes.iter())
+                .map(|(close, volume)| close * volume)
+                .sum();
+            let total_volume: f64 = self.volumes.iter().sum();
+            
+            if total_volume > 0.0 {
+                Some(total_volume_price / total_volume)
+            } else {
+                None
+            }
+        }
+    }
 }
 
 /// 일봉 데이터 구조체
 #[derive(Debug)]
 pub struct DailyData {
     pub closes: Vec<f64>,
+    pub opens: Vec<f64>,
+    pub highs: Vec<f64>,
+    pub lows: Vec<f64>,
+    pub volumes: Vec<f64>,
 }
 
 impl DailyData {
     pub fn get_close(&self) -> Option<f64> {
         self.closes.first().copied()
+    }
+
+    pub fn get_open(&self) -> Option<f64> {
+        self.opens.first().copied()
+    }
+
+    pub fn get_high(&self) -> Option<f64> {
+        self.highs.first().copied()
+    }
+
+    pub fn get_low(&self) -> Option<f64> {
+        self.lows.first().copied()
+    }
+
+    pub fn get_volume(&self) -> Option<f64> {
+        self.volumes.first().copied()
     }
 }
 
@@ -132,7 +218,7 @@ pub fn get_morning_data(
 
     // 최적화된 쿼리 (한 번에 모든 데이터 조회)
     let query = format!(
-        "SELECT close, open, high, low FROM \"{}\" WHERE date >= ? AND date <= ? ORDER BY date",
+        "SELECT close, open, high, low, volume FROM \"{}\" WHERE date >= ? AND date <= ? ORDER BY date",
         table_name
     );
 
@@ -143,6 +229,7 @@ pub fn get_morning_data(
             row.get::<_, i32>(1)?, // open
             row.get::<_, i32>(2)?, // high
             row.get::<_, i32>(3)?, // low
+            row.get::<_, i32>(4)?, // volume
         ))
     })?;
 
@@ -151,13 +238,15 @@ pub fn get_morning_data(
     let mut opens = Vec::new();
     let mut highs = Vec::new();
     let mut lows = Vec::new();
+    let mut volumes = Vec::new();
 
     for row in rows {
-        let (close, open, high, low) = row?;
+        let (close, open, high, low, volume) = row?;
         closes.push(close as f64);
         opens.push(open as f64);
         highs.push(high as f64);
         lows.push(low as f64);
+        volumes.push(volume as f64);
     }
 
     Ok(MorningData {
@@ -165,6 +254,7 @@ pub fn get_morning_data(
         opens,
         highs,
         lows,
+        volumes,
     })
 }
 
@@ -174,7 +264,10 @@ pub fn get_daily_data(
     stock_code: &str,
     date: &str,
 ) -> StockrsResult<DailyData> {
+    use tracing::{info, warn};
+    info!("🔍 [get_daily_data] 일봉 데이터 조회 시작 (종목: {}, 날짜: {})", stock_code, date);
     let table_name = stock_code.to_string();
+    info!("📋 [get_daily_data] 테이블명: '{}'", table_name);
 
     // 테이블 존재 여부 확인 (최적화된 쿼리)
     let table_exists: i64 = daily_db
@@ -187,7 +280,10 @@ pub fn get_daily_data(
             StockrsError::database_query(format!("일봉 테이블 존재 여부 확인 실패: {}", table_name))
         })?;
 
+    info!("📊 [get_daily_data] 테이블 존재 여부: {} (종목: {})", table_exists, stock_code);
+
     if table_exists == 0 {
+        warn!("❌ [get_daily_data] 테이블이 존재하지 않습니다 (종목: {}, 테이블: {})", stock_code, table_name);
         return Err(StockrsError::database_query(format!(
             "일봉 테이블이 존재하지 않습니다: {} (종목: {})",
             table_name, stock_code
@@ -195,20 +291,27 @@ pub fn get_daily_data(
     }
 
     // 해당 날짜의 데이터 존재 여부 확인 (최적화된 쿼리)
+    let count_query = format!("SELECT COUNT(*) FROM \"{}\" WHERE date = ?", table_name);
+    info!("🔍 [get_daily_data] 데이터 존재 확인 쿼리: '{}' (파라미터: date='{}')", count_query, date);
+    
     let data_exists: i64 = daily_db
         .query_row(
-            &format!("SELECT COUNT(*) FROM \"{}\" WHERE date = ?", table_name),
+            &count_query,
             rusqlite::params![&date],
             |row| row.get(0),
         )
-        .map_err(|_| {
+        .map_err(|e| {
+            warn!("❌ [get_daily_data] 데이터 존재 확인 쿼리 실패: {} (종목: {}, 테이블: {}, 날짜: {})", e, stock_code, table_name, date);
             StockrsError::database_query(format!(
                 "일봉 데이터 존재 여부 확인 실패: {} (날짜: {})",
                 table_name, date
             ))
         })?;
 
+    info!("📊 [get_daily_data] 데이터 존재 개수: {} (종목: {}, 테이블: {}, 날짜: {})", data_exists, stock_code, table_name, date);
+
     if data_exists == 0 {
+        warn!("❌ [get_daily_data] 데이터가 없습니다 (종목: {}, 테이블: {}, 날짜: {})", stock_code, table_name, date);
         return Err(StockrsError::database_query(format!(
             "전일 데이터가 없습니다: {} (테이블: {}, 날짜: {})",
             stock_code, table_name, date
@@ -217,9 +320,10 @@ pub fn get_daily_data(
 
     // 최적화된 쿼리 (한 번에 모든 데이터 조회)
     let query = format!(
-        "SELECT close, open, high, low FROM \"{}\" WHERE date = ?",
+        "SELECT close, open, high, low, volume FROM \"{}\" WHERE date = ?",
         table_name
     );
+    info!("🔍 [get_daily_data] 데이터 조회 쿼리: '{}' (파라미터: date='{}')", query, date);
 
     let mut stmt = daily_db.prepare(&query)?;
     let rows = stmt.query_map([&date], |row| {
@@ -228,22 +332,61 @@ pub fn get_daily_data(
             row.get::<_, i32>(1)?, // open
             row.get::<_, i32>(2)?, // high
             row.get::<_, i32>(3)?, // low
+            row.get::<_, i32>(4)?, // volume
         ))
     })?;
 
     // 벡터 사전 할당으로 메모리 최적화
     let mut closes = Vec::new();
+    let mut opens = Vec::new();
+    let mut highs = Vec::new();
+    let mut lows = Vec::new();
+    let mut volumes = Vec::new();
 
+    let mut row_count = 0;
     for row in rows {
-        let (close, _open, _high, _low) = row?;
+        let (close, open, high, low, volume) = row?;
         closes.push(close as f64);
+        opens.push(open as f64);
+        highs.push(high as f64);
+        lows.push(low as f64);
+        volumes.push(volume as f64);
+        row_count += 1;
     }
 
-    Ok(DailyData { closes })
+    info!("✅ [get_daily_data] 데이터 조회 완료 (종목: {}, 날짜: {}, 행 개수: {})", stock_code, date, row_count);
+
+    Ok(DailyData {
+        closes,
+        opens,
+        highs,
+        lows,
+        volumes,
+    })
 }
 
 /// 이전 거래일을 찾는 함수 - 1일봉 날짜 목록 사용
 pub fn get_previous_trading_day(day_dates: &[String], date: &str) -> StockrsResult<String> {
+    use tracing::{info, warn};
+    
+    info!("🔍 [get_previous_trading_day] 전일 찾기 시작 (날짜: {}, 전체 날짜 수: {})", date, day_dates.len());
+    
+    // 빈 배열 체크
+    if day_dates.is_empty() {
+        warn!("❌ [get_previous_trading_day] 거래일 배열이 비어있습니다");
+        return Err(StockrsError::prediction(format!(
+            "거래일 배열이 비어있습니다"
+        )));
+    }
+    
+    // 첫 번째 날짜인지 확인
+    if day_dates[0] == date {
+        warn!("❌ [get_previous_trading_day] 첫 번째 거래일이므로 전일이 없습니다: {}", date);
+        return Err(StockrsError::prediction(format!(
+            "첫 번째 거래일이므로 전일이 없습니다: {}",
+            date
+        )));
+    }
     
     // 이진 탐색으로 최적화 (정렬된 배열에서)
     let mut left = 0;
@@ -261,8 +404,11 @@ pub fn get_previous_trading_day(day_dates: &[String], date: &str) -> StockrsResu
 
     // 이전 거래일 찾기
     if left > 0 {
-        Ok(day_dates[left - 1].clone())
+        let prev_date = day_dates[left - 1].clone();
+        info!("✅ [get_previous_trading_day] 전일 찾기 완료: {} -> {}", date, prev_date);
+        Ok(prev_date)
     } else {
+        warn!("❌ [get_previous_trading_day] 전일을 찾을 수 없습니다: {}", date);
         Err(StockrsError::prediction(format!(
             "이전 거래일을 찾을 수 없습니다: {}",
             date
@@ -290,26 +436,52 @@ pub fn is_special_trading_date(date: &str) -> bool {
 
 /// 첫 거래일인지 확인하는 함수
 pub fn is_first_trading_day(daily_db: &Connection, stock_code: &str, date: &str, day_dates: &[String]) -> StockrsResult<bool> {
+    use tracing::{info, warn};
+    info!("🔍 [is_first_trading_day] 첫 거래일 확인 중 (종목: {}, 날짜: {})", stock_code, date);
+    
+    // 빈 배열 체크
+    if day_dates.is_empty() {
+        warn!("❌ [is_first_trading_day] 거래일 배열이 비어있습니다");
+        return Err(StockrsError::prediction(format!(
+            "거래일 배열이 비어있습니다"
+        )));
+    }
+    
+    // 첫 번째 날짜인지 확인
+    if day_dates[0] == date {
+        info!("✅ [is_first_trading_day] 첫 번째 거래일이므로 첫 거래일로 판단: {}", date);
+        return Ok(true);
+    }
+    
     // 전 거래일 가져오기
     let previous_date = get_previous_trading_day(day_dates, date)?;
+    info!("📅 [is_first_trading_day] 전 거래일: {} (종목: {})", previous_date, stock_code);
     
     // 전 거래일에 해당 종목 데이터가 있는지 확인
     let table_name = stock_code;
+    let count_query = format!("SELECT COUNT(*) FROM \"{}\" WHERE date = ?", table_name);
+    info!("🔍 [is_first_trading_day] 데이터 확인 쿼리: '{}' (파라미터: date='{}')", count_query, previous_date);
+    
     let count: i64 = daily_db
         .query_row(
-            &format!("SELECT COUNT(*) FROM \"{}\" WHERE date = ?", table_name),
+            &count_query,
             [&previous_date],
             |row| row.get(0),
         )
-        .map_err(|_| {
+        .map_err(|e| {
+            warn!("❌ [is_first_trading_day] 데이터 확인 쿼리 실패: {} (종목: {}, 테이블: {}, 전일: {})", e, stock_code, table_name, previous_date);
             StockrsError::database_query(format!(
                 "종목 {}의 전 거래일 데이터 확인 실패",
                 table_name
             ))
         })?;
     
+    info!("📊 [is_first_trading_day] 전 거래일 데이터 개수: {} (종목: {}, 전일: {})", count, stock_code, previous_date);
+    
     // 전 거래일에 데이터가 없으면 첫 거래일
-    Ok(count == 0)
+    let is_first = count == 0;
+    info!("✅ [is_first_trading_day] 첫 거래일 여부: {} (종목: {}, 날짜: {})", is_first, stock_code, date);
+    Ok(is_first)
 }
 
 /// 날짜에 따른 시간 범위를 반환하는 함수

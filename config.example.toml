@@ -14,7 +14,7 @@ trading_db_path = "stockrs/trading.db"
 
 [onnx_model]
 # ONNX 모델 파일 경로
-model_file_path = "data/one.onnx"
+model_file_path = "data/zero.onnx"
 # 특징 리스트 파일
 features_file_path = "data/features.txt"
 # 포함할 종목 리스트
@@ -92,7 +92,9 @@ entry_time = "09:30:00"
 # 강제 정리 시점 (24시간 형식)
 force_close_time = "12:00:00"
 # 매수 시 사용할 자산 비율 (%)
-entry_asset_ratio = 90.0
+entry_asset_ratio = 50
+# 고정 매수 금액 (원) - 0이면 비율 기반 매수만 사용
+fixed_entry_amount = 5000000
 
 [time_management]
 # trading_dates.txt 파일 경로

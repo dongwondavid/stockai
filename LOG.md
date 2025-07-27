@@ -1,5 +1,22 @@
 # 📝 변경 이력 로그
 
+2025-07-27T10:15: stockrs/src/model/onnx_predictor/features/day2.rs: calculate_volume_ratio_vs_prevday 함수 매개변수 수정 - db 매개변수 추가하여 5분봉 DB에서 get_morning_data 호출하도록 수정, daily_db 대신 db 사용하여 올바른 데이터베이스에서 당일 오전 거래량 조회
+2025-07-27T10:15: stockrs/src/model/onnx_predictor/features.rs: day2_volume_ratio_vs_prevday 특징 호출 시 db 매개변수 추가 - calculate_volume_ratio_vs_prevday 함수 호출 시 db와 daily_db 모두 전달하도록 수정, 데이터베이스 매개변수 전달 오류 해결
+
+2025-07-27T10:00: stockrs/src/model/onnx_predictor/features/utils.rs: get_daily_data 및 is_first_trading_day 함수에 상세 로깅 추가 - SQL 쿼리 문자열과 파라미터 출력, 데이터베이스 반환값 상세 로깅, 테이블 존재 여부 및 데이터 개수 확인 로그 추가, 사용자 제공 데이터와 실제 쿼리 결과 불일치 문제 디버깅을 위한 로깅 강화
+
+2025-07-27T09:30: stockrs/src/model/onnx_predictor/features/day2.rs: 특징 계산 오류 분석 완료 - day2_volume_ratio_vs_prevday 특징에서 종목 A277810의 20230831(전일) 일봉 데이터 없음으로 인한 오류 발생 확인, 전일 데이터 의존적 특징들의 첫 거래일 처리 로직 개선 필요성 파악
+
+2025-07-27T09:15: stockrs/src/model/onnx_predictor/features/day2.rs: 특징 계산 로깅 개선 - debug! 레벨을 info! 레벨로 변경하여 로그 가시성 향상, day2_volume_ratio_vs_prevday 특징에서 전일 데이터 없음 오류 발생 시 상세 로그 출력, 오류 발생 위치 정확히 파악 가능하도록 개선
+
+2025-01-27T11:00: stockrs/src/model/joonwoo.rs: 고정 매수 금액 기능 구현 - 고정 금액 우선 매수 후 자금 부족 시 비율 기반 매수하는 로직으로 변경, fixed_entry_amount 필드 추가, 매수 로직 개선하여 고정 금액으로 매수할 수 없을 때 자동으로 비율 기반 매수로 전환
+2025-01-27T11:00: stockrs/src/utility/config.rs: JoonwooConfig에 fixed_entry_amount 필드 추가 - 고정 매수 금액 설정을 위한 새로운 필드 추가, 설정 유효성 검증 로직 추가
+2025-01-27T11:00: config.example.toml: joonwoo 섹션에 fixed_entry_amount 설정 추가 - 고정 매수 금액 설정 예시 추가 (기본값: 1,000,000원)
+
+2025-07-26T21:00: stockrs/src/model/joonwoo.rs: 트레일링 스탑 로직 제거 및 전량 매도로 변경 - 절반 매도 후 잔여분 관리 구조를 제거하고 익절 시 한 번에 모든 포지션을 매도하도록 수정, PartialSold 상태와 highest_price_after_2pct 필드 제거, create_sell_half_order와 create_sell_remaining_order 함수 제거, trailing_stop_pct 설정 제거
+
+2025-07-26T20:55: stockrs/src/model/onnx_predictor.rs: trading_dates 경로를 config에서 로드하도록 수정 - 하드코딩된 경로 제거하고 config.time_management.trading_dates_file_path 사용
+2025-07-26T20:50: stockrs/src/model/onnx_predictor.rs: trading_dates를 1일봉 데이터에서 로드하도록 수정 - backtest_dates_1.txt 대신 samsung_1day_dates.txt 사용하여 전체 1일봉 거래일 활용
 2025-07-26T20:43: stockrs/src/model/onnx_predictor.rs: 예측 결과가 없을 때 처리 개선 - 확률이 0.5 미만인 경우 매수하지 않도록 수정, 예측 실패 시 명확한 로그 메시지 추가
 2025-07-26T20:43: stockrs/src/model/joonwoo.rs: 예측 실패 시 매수하지 않도록 처리 개선 - try_entry 함수에서 예측 실패 시 None 반환하여 매수 주문 생성하지 않음
 2025-07-26T20:43: stockrs/src/db_manager.rs: 거래 기록이 없을 때 처리 개선 - finish_overview 함수에서 거래 기록이 없는 경우 기본값(0) 사용, 에러 대신 정상 처리
@@ -289,3 +306,19 @@
 2025-01-27T10:30: stockrs/src/utility/config.rs: market_close_file_path 필드 제거 - TimeManagementConfig에서 사용하지 않는 필드 삭제
 
 2025-01-27T10:50: stockrs/src/utility/config.rs: auto_set_dates_from_file이 true일 때 trading_dates_file_path에서 시작/종료 날짜를 자동으로 읽어와 start_date, end_date에 반영하는 로직 구현
+
+2024-12-19 15:30:00: features.txt - 특징 목록을 20개에서 10개로 변경하고 새로운 특징들 추가
+2024-12-19 15:35:00: stockrs/src/model/onnx_predictor/features/day1.rs - 새로운 특징 함수들 정의 추가 (calculate_volume_ratio, calculate_vwap_position_ratio)
+2024-12-19 15:35:00: stockrs/src/model/onnx_predictor/features/day2.rs - 새로운 특징 함수 정의 추가 (calculate_volume_ratio_vs_prevday)
+2024-12-19 15:35:00: stockrs/src/model/onnx_predictor/features/day3.rs - 새로운 특징 함수 정의 추가 (calculate_morning_volume_ratio)
+2024-12-19 15:35:00: stockrs/src/model/onnx_predictor/features/day4.rs - 새로운 특징 함수 정의 추가 (calculate_pos_vs_high_10d)
+2024-12-19 15:35:00: stockrs/src/model/onnx_predictor/features.rs - 새로운 특징들의 매핑 추가
+
+2024-12-19 15:40:00: stockrs/src/model/onnx_predictor/features/day1.rs - calculate_volume_ratio, calculate_vwap_position_ratio 함수 구현 완료
+2024-12-19 15:40:00: stockrs/src/model/onnx_predictor/features/utils.rs - MorningData와 DailyData 구조체에 volumes 필드 및 관련 메서드들 추가, RSI 계산 함수 추가
+
+2024-12-19 15:45:00: stockrs/src/model/onnx_predictor/features/day2.rs - calculate_volume_ratio_vs_prevday 함수 구현 완료
+
+2024-12-19 15:50:00: stockrs/src/model/onnx_predictor/features/day3.rs - calculate_morning_volume_ratio 함수 구현 완료
+
+2024-12-19 15:55:00: stockrs/src/model/onnx_predictor/features/day4.rs - calculate_pos_vs_high_10d 함수 구현 완료

@@ -92,6 +92,7 @@ pub struct JoonwooConfig {
     pub entry_time: String,
     pub force_close_time: String,
     pub entry_asset_ratio: f64,
+    pub fixed_entry_amount: f64,  // 고정 매수 금액 (원)
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -313,6 +314,11 @@ impl Config {
         if self.joonwoo.entry_asset_ratio <= 0.0 || self.joonwoo.entry_asset_ratio > 100.0 {
             return Err(ConfigError::ValidationError(
                 "joonwoo.entry_asset_ratio는 0~100 사이여야 합니다".to_string(),
+            ));
+        }
+        if self.joonwoo.fixed_entry_amount < 0.0 {
+            return Err(ConfigError::ValidationError(
+                "joonwoo.fixed_entry_amount는 0 이상이어야 합니다".to_string(),
             ));
         }
 

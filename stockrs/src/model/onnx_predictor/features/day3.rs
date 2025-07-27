@@ -1,5 +1,4 @@
-use super::utils::get_morning_data;
-use super::utils::is_first_trading_day;
+use super::utils::{get_morning_data, get_daily_data, is_first_trading_day};
 use crate::utility::errors::{StockrsError, StockrsResult};
 use chrono::{Duration, NaiveDate};
 use rusqlite::Connection;
@@ -178,4 +177,30 @@ pub fn calculate_breaks_6month_high(
     };
 
     Ok(breaks_6month_high)
+}
+
+/// 오전 거래량 비율 계산 (09:00~11:00 거래량 / 전체 거래량)
+pub fn calculate_morning_volume_ratio(db: &Connection, daily_db: &Connection, stock_code: &str, date: &str) -> StockrsResult<f64> {
+    // 오전 거래량 비율 계산
+    let morning_data = get_morning_data(db, stock_code, date)?;
+    let morning_volume = morning_data.get_avg_volume()
+        .ok_or_else(|| StockrsError::unsupported_feature(
+            "calculate_morning_volume_ratio".to_string(),
+            "오전 거래량 데이터가 필요합니다".to_string(),
+        ))?;
+    
+    // 전일 거래량 조회
+    let daily_data = get_daily_data(daily_db, stock_code, date)?;
+    let daily_volume = daily_data.get_volume()
+        .ok_or_else(|| StockrsError::unsupported_feature(
+            "calculate_morning_volume_ratio".to_string(),
+            "전일 거래량 데이터가 필요합니다".to_string(),
+        ))?;
+    
+    // 오전 거래량 비율 계산 (오전 거래량 / 전일 거래량)
+    if daily_volume > 0.0 {
+        Ok(morning_volume / daily_volume)
+    } else {
+        Ok(0.0) // 전일 거래량이 0이면 0.0 반환
+    }
 }

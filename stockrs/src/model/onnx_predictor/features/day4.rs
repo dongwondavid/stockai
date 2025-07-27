@@ -278,3 +278,40 @@ pub fn calculate_pos_vs_high_3d(
 
     Ok(current_price / three_day_high)
 }
+
+/// 10일 고점 대비 현재 위치 계산
+pub fn calculate_pos_vs_high_10d(daily_db: &Connection, stock_code: &str, date: &str) -> StockrsResult<f64> {
+    // 최근 10일 고점 대비 현재가 위치 비율
+    let table_name = stock_code;
+    let query = format!(
+        "SELECT close FROM \"{}\" WHERE date <= ? ORDER BY date DESC LIMIT 11",
+        table_name
+    );
+    
+    let mut stmt = daily_db.prepare(&query)?;
+    let rows = stmt.query_map([&date.parse::<i32>().unwrap_or(0)], |row| {
+        Ok(row.get::<_, i32>(0)?)
+    })?;
+    
+    let mut prices = Vec::new();
+    for row in rows {
+        prices.push(row? as f64);
+    }
+    
+    // 가격을 시간순으로 정렬 (최신이 마지막)
+    prices.reverse();
+    
+    if prices.len() < 11 {
+        return Ok(0.0); // 데이터가 부족하면 0.0 반환
+    }
+    
+    let current_price = prices[prices.len() - 1]; // 현재가
+    let high_10d = prices.iter().take(10).fold(f64::NEG_INFINITY, |a, &b| a.max(b)); // 10일 고점
+    
+    if high_10d > 0.0 {
+        // 현재가 / 10일 고점 비율
+        Ok(current_price / high_10d)
+    } else {
+        Ok(0.0)
+    }
+}

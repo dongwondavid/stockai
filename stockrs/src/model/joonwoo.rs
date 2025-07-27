@@ -11,7 +11,6 @@ use tracing::{debug, info, warn};
 pub enum TradingState {
     WaitingForEntry, // 9:30 매수 대기
     Holding,         // 포지션 보유 중
-    PartialSold,     // 절반 익절 후 잔여분 보유
     Closed,          // 모든 포지션 정리됨
 }
 
@@ -28,15 +27,14 @@ pub struct JoonwooModel {
 
     // 상태 추적
     state: TradingState,
-    highest_price_after_2pct: Option<f64>,
 
     // 설정값들 (config에서 로드)
     stop_loss_pct: f64,
     take_profit_pct: f64,
-    trailing_stop_pct: f64,
     entry_time_str: String,
     force_close_time_str: String,
     entry_asset_ratio: f64,
+    fixed_entry_amount: f64,  // 고정 매수 금액 (원)
 }
 
 impl Default for JoonwooModel {
@@ -60,13 +58,12 @@ impl Default for JoonwooModel {
             entry_price: 0.0,
             entry_time: None,
             state: TradingState::WaitingForEntry,
-            highest_price_after_2pct: None,
             stop_loss_pct: config.joonwoo.stop_loss_pct,
             take_profit_pct: config.joonwoo.take_profit_pct,
-            trailing_stop_pct: config.joonwoo.trailing_stop_pct,
             entry_time_str: config.joonwoo.entry_time.clone(),
             force_close_time_str: config.joonwoo.force_close_time.clone(),
             entry_asset_ratio: config.joonwoo.entry_asset_ratio,
+            fixed_entry_amount: config.joonwoo.fixed_entry_amount,
         }
     }
 }
@@ -86,13 +83,12 @@ impl JoonwooModel {
             entry_price: 0.0,
             entry_time: None,
             state: TradingState::WaitingForEntry,
-            highest_price_after_2pct: None,
             stop_loss_pct: 1.0,     // -1%
             take_profit_pct: 2.0,   // +2%
-            trailing_stop_pct: 0.7, // -0.7%
             entry_time_str: "09:30:00".to_string(),
             force_close_time_str: "12:00:00".to_string(),
             entry_asset_ratio: 90.0,
+            fixed_entry_amount: 1000000.0, // 기본 고정 매수 금액
         }
     }
 
@@ -183,9 +179,7 @@ impl JoonwooModel {
         let target_stock = match predictor.predict_top_stock(&today_str, &db, &daily_db) {
             Ok(stock) => stock,
             Err(e) => {
-                warn!("🔮 [joonwoo] 예측 실패: {} - 매수하지 않음", e);
-                // 예측 실패 시 매수하지 않고 None 반환
-                return Ok(None);
+                return Err(e.into());
             }
         };
 
@@ -204,12 +198,46 @@ impl JoonwooModel {
             .get_balance()
             .map_err(|e| Box::new(e) as Box<dyn Error>)?;
 
-        // 매수 가능 수량 계산 (설정된 자산 비율 사용)
-        let available_amount = balance_info.get_asset() * (self.entry_asset_ratio / 100.0);
-        let max_quantity = (available_amount / current_price) as u32;
+        // 고정 매수 금액 우선 시도, 부족하면 비율 기반 매수
+        let mut quantity_to_buy = 0;
+        let available_balance = balance_info.get_asset();
+        
+        if self.fixed_entry_amount > 0.0 {
+            // 고정 금액으로 매수 시도
+            let max_quantity_fixed = (self.fixed_entry_amount / current_price) as u32;
+            if max_quantity_fixed > 0 && self.fixed_entry_amount <= available_balance {
+                quantity_to_buy = max_quantity_fixed;
+                info!("📈 [joonwoo] 고정 매수: {}주 @{:.0}원 (고정 금액: {:.0}원)", 
+                    quantity_to_buy, current_price, self.fixed_entry_amount);
+            } else {
+                // 고정 금액으로 매수할 수 없으면 비율 기반 매수
+                let available_amount = available_balance * (self.entry_asset_ratio / 100.0);
+                let max_quantity_ratio = (available_amount / current_price) as u32;
+                if max_quantity_ratio > 0 {
+                    quantity_to_buy = max_quantity_ratio;
+                    info!("📈 [joonwoo] 비율 매수: {}주 @{:.0}원 (자산비율: {:.1}%) - 고정금액 부족", 
+                        quantity_to_buy, current_price, self.entry_asset_ratio);
+                } else {
+                    debug!("자산비율로도 매수할 수량이 0입니다. 가격: {}, 가용자산: {}", 
+                        current_price, available_balance);
+                }
+            }
+        } else {
+            // 고정 금액이 설정되지 않은 경우 비율 기반 매수
+            let available_amount = available_balance * (self.entry_asset_ratio / 100.0);
+            let max_quantity_ratio = (available_amount / current_price) as u32;
+            if max_quantity_ratio > 0 {
+                quantity_to_buy = max_quantity_ratio;
+                info!("📈 [joonwoo] 비율 매수: {}주 @{:.0}원 (자산비율: {:.1}%)", 
+                    quantity_to_buy, current_price, self.entry_asset_ratio);
+            } else {
+                debug!("자산비율로 매수할 수량이 0입니다. 가격: {}, 가용자산: {}", 
+                    current_price, available_balance);
+            }
+        }
 
-        if max_quantity == 0 {
-            debug!("매수 가능 수량이 0입니다. 가격: {}, 가용자산: {}", current_price, available_amount);
+        if quantity_to_buy == 0 {
+            debug!("매수 가능 수량이 0입니다. 가격: {}, 가용자산: {}", current_price, balance_info.get_asset());
             return Ok(None);
         }
 
@@ -218,7 +246,7 @@ impl JoonwooModel {
             date: current_time.naive_local(),
             stockcode: target_stock.clone(),
             side: OrderSide::Buy,
-            quantity: max_quantity,
+            quantity: quantity_to_buy,
             price: current_price,
             fee: 0.0,
             strategy: "joonwoo_entry".to_string(),
@@ -226,14 +254,14 @@ impl JoonwooModel {
 
         // 상태 업데이트
         self.current_stock = Some(target_stock.clone());
-        self.position_size = max_quantity;
-        self.remaining_size = max_quantity;
+        self.position_size = quantity_to_buy;
+        self.remaining_size = quantity_to_buy;
         self.entry_price = current_price;
         self.entry_time = Some(current_time.naive_local());
         self.state = TradingState::Holding;
 
         info!("📈 [joonwoo] 매수 주문 생성: {} {}주 @{:.0}원 (설정된 시간: {})", 
-            target_stock, max_quantity, current_price, self.entry_time_str);
+            target_stock, quantity_to_buy, current_price, self.entry_time_str);
 
         Ok(Some(order))
     }
@@ -265,31 +293,10 @@ impl JoonwooModel {
                     return self.create_sell_all_order(time, current_price, "stop_loss");
                 }
 
-                // 익절 조건 (설정된 비율)
+                // 익절 조건 (설정된 비율) - 한 번에 모두 매도
                 if profit_rate >= self.take_profit_pct && self.state == TradingState::Holding {
-                    println!("📈 [joonwoo] 익절: {:.2}% (설정: +{:.1}%) (절반)", profit_rate, self.take_profit_pct);
-                    self.state = TradingState::PartialSold;
-                    self.highest_price_after_2pct = Some(current_price);
-                    return self.create_sell_half_order(time, current_price, "take_profit_half");
-                }
-
-                // 추가 손절 조건 (절반 매도 후 설정된 비율)
-                if self.state == TradingState::PartialSold {
-                    if let Some(highest_price) = self.highest_price_after_2pct {
-                        let updated_highest = highest_price.max(current_price);
-                        self.highest_price_after_2pct = Some(updated_highest);
-
-                        let trailing_loss_rate =
-                            (current_price - updated_highest) / updated_highest * 100.0;
-                        if trailing_loss_rate <= -self.trailing_stop_pct {
-                            println!("📉 [joonwoo] 추가 손절: {:.2}% (설정: -{:.1}%)", trailing_loss_rate, self.trailing_stop_pct);
-                            return self.create_sell_remaining_order(
-                                time,
-                                current_price,
-                                "trailing_stop",
-                            );
-                        }
-                    }
+                    println!("📈 [joonwoo] 익절: {:.2}% (설정: +{:.1}%) (전량)", profit_rate, self.take_profit_pct);
+                    return self.create_sell_all_order(time, current_price, "take_profit_all");
                 }
             }
         }
@@ -348,59 +355,7 @@ impl JoonwooModel {
         }
     }
 
-    /// 절반 매도 주문 생성
-    fn create_sell_half_order(
-        &mut self,
-        time: &TimeService,
-        price: f64,
-        reason: &str,
-    ) -> Result<Option<Order>, Box<dyn Error>> {
-        if let Some(ref stock_code) = self.current_stock {
-            let sell_quantity = self.remaining_size / 2;
-            let order = Order {
-                date: time.now().naive_local(),
-                stockcode: stock_code.clone(),
-                side: OrderSide::Sell,
-                quantity: sell_quantity,
-                price,
-                fee: 0.0,
-                strategy: format!("joonwoo_{}", reason),
-            };
 
-            self.remaining_size -= sell_quantity;
-
-            Ok(Some(order))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// 잔여분 매도 주문 생성
-    fn create_sell_remaining_order(
-        &mut self,
-        time: &TimeService,
-        price: f64,
-        reason: &str,
-    ) -> Result<Option<Order>, Box<dyn Error>> {
-        if let Some(ref stock_code) = self.current_stock {
-            let order = Order {
-                date: time.now().naive_local(),
-                stockcode: stock_code.clone(),
-                side: OrderSide::Sell,
-                quantity: self.remaining_size,
-                price,
-                fee: 0.0,
-                strategy: format!("joonwoo_{}", reason),
-            };
-
-            self.remaining_size = 0;
-            self.state = TradingState::Closed;
-
-            Ok(Some(order))
-        } else {
-            Ok(None)
-        }
-    }
 }
 
 impl Model for JoonwooModel {
@@ -420,9 +375,9 @@ impl Model for JoonwooModel {
 
         self.state = TradingState::WaitingForEntry;
         info!(
-            "📊 [joonwoo] 설정 - 손절: -{:.1}%, 익절: +{:.1}%, 추가손절: -{:.1}%, 매수시간: {}, 강제정리시간: {}, 자산비율: {:.1}%",
-            self.stop_loss_pct, self.take_profit_pct, self.trailing_stop_pct, 
-            self.entry_time_str, self.force_close_time_str, self.entry_asset_ratio
+            "📊 [joonwoo] 설정 - 손절: -{:.1}%, 익절: +{:.1}%, 매수시간: {}, 강제정리시간: {}, 자산비율: {:.1}%, 고정매수금액: {:.0}원",
+            self.stop_loss_pct, self.take_profit_pct, 
+            self.entry_time_str, self.force_close_time_str, self.entry_asset_ratio, self.fixed_entry_amount
         );
 
         Ok(())
@@ -502,7 +457,6 @@ impl Model for JoonwooModel {
         self.entry_price = 0.0;
         self.entry_time = None;
         self.state = TradingState::WaitingForEntry;
-        self.highest_price_after_2pct = None;
 
         Ok(())
     }

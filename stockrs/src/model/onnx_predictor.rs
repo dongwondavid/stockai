@@ -10,7 +10,7 @@ use ndarray::Array2;
 use ort::{Environment, SessionBuilder, Value};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{debug, info, error};
 
 use crate::utility::apis::db_api::DbApi;
 use crate::utility::apis::korea_api::KoreaApi;
@@ -60,6 +60,8 @@ impl ONNXPredictor {
                 })?,
         );
 
+        println!("ONNX Runtime 환경 초기화 완료");
+
         // 세션 생성
         let session = SessionBuilder::new(&environment)
             .map_err(|e| {
@@ -74,8 +76,8 @@ impl ONNXPredictor {
         // features.txt 로드
         let features = Self::load_features(features_path)?;
 
-        info!("ONNX 모델 로드 완료: {}", model_file_path);
-        info!(
+        println!("ONNX 모델 로드 완료: {}", model_file_path);
+        println!(
             "특징 수: {}, 포함 종목 수: {}",
             features.len(),
             included_stocks_set.len()
@@ -175,6 +177,8 @@ impl ONNXPredictor {
             ));
         }
 
+        // println!("{:?}", features_data);
+
         // ONNX 모델로 예측 (최적화됨)
         debug!("ONNX 모델로 예측 시작...");
         let mut predictions = self.predict_with_onnx_model(&features_data)?;
@@ -211,6 +215,7 @@ impl ONNXPredictor {
         let mut features_data = Vec::with_capacity(stocks.len());
 
         for stock_code in stocks {
+            info!("🔍 [ONNX] 종목 {} 특징 계산 시작", stock_code);
             match calculate_features_for_stock_optimized(
                 db,
                 daily_db,
@@ -224,19 +229,11 @@ impl ONNXPredictor {
                         stock_code: stock_code.clone(),
                         features: feature_values,
                     });
-                    debug!("종목 {} 특징 계산 완료", stock_code);
+                    info!("✅ [ONNX] 종목 {} 특징 계산 완료", stock_code);
                 }
                 Err(e) => {
-                    warn!(
-                        "종목 {} 특징 계산 실패: {} - 기본값으로 진행",
-                        stock_code, e
-                    );
-                    // 실패한 경우에도 기본값으로 특징 계산을 시도
-                    let default_features = vec![0.0; self.features.len()];
-                    features_data.push(StockFeatures {
-                        stock_code: stock_code.clone(),
-                        features: default_features,
-                    });
+                    error!("❌ [ONNX] 종목 {} 특징 계산 실패: {}", stock_code, e);
+                    return Err(StockrsError::prediction(format!("종목 {} 특징 계산 실패: {}", stock_code, e)));
                 }
             }
         }
@@ -324,7 +321,7 @@ impl ONNXPredictor {
 
             // 클래스가 0이면 결과에 추가하지 않음
             if predicted_class == 0 {
-                debug!(
+                info!(
                     "종목 {} 예측 결과: 클래스 0 (매수하지 않음)",
                     stock_data.stock_code
                 );
