@@ -26,6 +26,7 @@ pub struct Config {
     pub time_management: TimeManagementConfig,
     pub market_hours: MarketHoursConfig,
     pub logging: LoggingConfig,
+    pub token_management: TokenManagementConfig,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -122,6 +123,35 @@ pub struct MarketHoursConfig {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct LoggingConfig {
     pub level: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct TokenManagementConfig {
+    /// 토큰 저장 파일 경로 (JSON 형식)
+    pub token_file_path: String,
+    /// 토큰 자동 갱신 여부
+    pub auto_refresh_tokens: bool,
+    /// 토큰 만료 전 갱신 시간 (분)
+    pub refresh_before_expiry_minutes: u32,
+    /// 토큰 만료 시 자동 삭제 여부
+    pub auto_cleanup_expired_tokens: bool,
+    /// 토큰 파일 백업 여부
+    pub backup_token_file: bool,
+    /// 토큰 파일 백업 경로
+    pub backup_token_file_path: String,
+}
+
+impl Default for TokenManagementConfig {
+    fn default() -> Self {
+        Self {
+            token_file_path: "tokens.json".to_string(),
+            auto_refresh_tokens: true,
+            refresh_before_expiry_minutes: 360, // 6시간
+            auto_cleanup_expired_tokens: true,
+            backup_token_file: true,
+            backup_token_file_path: "tokens_backup.json".to_string(),
+        }
+    }
 }
 
 impl Config {
@@ -460,6 +490,13 @@ pub fn get_config() -> Result<&'static Config, ConfigError> {
     config_option
         .as_ref()
         .ok_or_else(|| ConfigError::FileNotFound("설정을 로드할 수 없습니다".to_string()))
+}
+
+/// 전역 설정을 설정 (main.rs에서 사용)
+pub fn set_global_config(config: Config) -> Result<(), ConfigError> {
+    GLOBAL_CONFIG
+        .set(Some(config))
+        .map_err(|_| ConfigError::ValidationError("전역 설정이 이미 초기화되어 있습니다".to_string()))
 }
 
 /// 설정을 강제로 다시 로드 (주로 테스트용)

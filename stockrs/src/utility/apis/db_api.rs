@@ -1,12 +1,12 @@
-use crate::utility::config::get_config;
 use crate::utility::errors::{StockrsError, StockrsResult};
+use crate::utility::config;
 use crate::utility::types::api::StockApi;
 use crate::utility::types::broker::Order;
 use crate::utility::types::trading::AssetInfo;
 use rusqlite::Connection;
-use tracing::{debug, info};
+use tracing::debug;
 
-/// DB 정보 조회 API - 데이터베이스에서 주식 정보 조회만 담당
+/// DB 기반 API 구현 (백테스팅용)
 pub struct DbApi {
     /// 1분봉 DB 연결 (백테스팅용 현재가 조회)
     minute_db_connection: Connection,
@@ -18,40 +18,25 @@ pub struct DbApi {
 
 impl DbApi {
     pub fn new() -> StockrsResult<Self> {
-        debug!("🔄 [DbApi::new] DbApi 초기화 시작");
+        let config = config::get_config()?;
 
-        // config에서 DB 경로 로드
-        let config = get_config()?;
-
-        // DB 연결 (필수)
         let minute_db_connection = Connection::open(&config.database.minute_db_path)
-            .map_err(|e| StockrsError::database("1분봉 DB 연결", e.to_string()))?;
-
+            .map_err(|e| StockrsError::general(format!("1분봉 DB 연결 실패: {}", e)))?;
         let db_connection = Connection::open(&config.database.stock_db_path)
-            .map_err(|e| StockrsError::database("5분봉 DB 연결", e.to_string()))?;
-
+            .map_err(|e| StockrsError::general(format!("5분봉 DB 연결 실패: {}", e)))?;
         let daily_db_connection = Connection::open(&config.database.daily_db_path)
-            .map_err(|e| StockrsError::database("일봉 DB 연결", e.to_string()))?;
+            .map_err(|e| StockrsError::general(format!("일봉 DB 연결 실패: {}", e)))?;
 
-        // 성능 최적화: DB 인덱스 추가 및 설정
         Self::optimize_database(&minute_db_connection)?;
         Self::optimize_database(&db_connection)?;
         Self::optimize_database(&daily_db_connection)?;
 
-        info!(
-            "✅ [DbApi::new] 1분봉 DB 연결 성공: {}",
-            config.database.minute_db_path
-        );
-        info!(
-            "✅ [DbApi::new] 5분봉 DB 연결 성공: {}",
-            config.database.stock_db_path
-        );
-        info!(
-            "✅ [DbApi::new] 일봉 DB 연결 성공: {}",
+        debug!(
+            "✅ [DbApi::new] DB 연결 완료 - 1분봉: {}, 5분봉: {}, 일봉: {}",
+            config.database.minute_db_path,
+            config.database.stock_db_path,
             config.database.daily_db_path
         );
-
-        debug!("✅ [DbApi::new] DbApi 초기화 완료");
 
         Ok(DbApi {
             minute_db_connection,
@@ -62,82 +47,105 @@ impl DbApi {
 
     /// 데이터베이스 성능 최적화 설정
     fn optimize_database(db: &Connection) -> StockrsResult<()> {
-        // WAL 모드 활성화 (쓰기 성능 향상)
-        db.execute_batch("PRAGMA journal_mode=WAL;")?;
+        // 성능 최적화: DB 인덱스 추가 및 설정
+        db.execute_batch("PRAGMA journal_mode = WAL")
+            .map_err(|e| StockrsError::general(format!("WAL 모드 설정 실패: {}", e)))?;
+        db.execute_batch("PRAGMA synchronous = NORMAL")
+            .map_err(|e| StockrsError::general(format!("동기화 설정 실패: {}", e)))?;
+        db.execute_batch("PRAGMA cache_size = 10000")
+            .map_err(|e| StockrsError::general(format!("캐시 크기 설정 실패: {}", e)))?;
+        db.execute_batch("PRAGMA temp_store = MEMORY")
+            .map_err(|e| StockrsError::general(format!("임시 저장소 설정 실패: {}", e)))?;
 
-        // 메모리 사용량 최적화
-        db.execute_batch("PRAGMA cache_size=10000;")?;
-        db.execute_batch("PRAGMA temp_store=MEMORY;")?;
-
-        // 동기화 설정 (성능과 안정성의 균형)
-        db.execute_batch("PRAGMA synchronous=NORMAL;")?;
-
-        // 외래키 제약 조건 비활성화 (성능 향상)
-        db.execute_batch("PRAGMA foreign_keys=OFF;")?;
-
-        debug!("✅ [DbApi::optimize_database] DB 최적화 설정 완료");
         Ok(())
     }
 
-    /// DB에서 현재가 조회 (시간 기반) - 1분봉 DB 사용 (최적화됨)
+    /// 특정 시간의 현재가 조회 (1분봉 DB 사용)
+    /// 시간대별 처리: 
+    /// - trading_start_time 이전: trading_start_time의 값 반환
+    /// - trading_start_time ~ trading_end_time: 해당 시간의 값 반환
+    /// - trading_end_time 이후: trading_end_time의 값 반환
     pub fn get_current_price_at_time(&self, stockcode: &str, time_str: &str) -> StockrsResult<f64> {
-        // 정확한 시간의 데이터가 있는지 확인 (1분봉 DB)
-        let exact_query = "SELECT close FROM \"{}\" WHERE date = ?";
+        debug!(
+            "🔍 [DbApi::get_current_price_at_time] 현재가 조회: 종목={}, 시간={}",
+            stockcode, time_str
+        );
 
-        // 정확한 시간의 데이터 조회 시도
-        let mut stmt = self
-            .minute_db_connection
-            .prepare(&exact_query.replace("{}", stockcode))
-            .map_err(|_e| {
-                StockrsError::database_query(format!(
-                    "SQL 준비 실패: {} (테이블: {})",
-                    exact_query, stockcode
-                ))
-            })?;
+        // 설정에서 거래 시간 가져오기
+        let config = config::get_config()?;
+        let trading_start_time = &config.market_hours.trading_start_time;
+        let trading_end_time = &config.market_hours.trading_end_time;
 
-        let exact_result: Result<f64, _> = stmt.query_row([time_str], |row| row.get(0));
+        // 시간 형식 변환: "HH:MM:SS" -> "HHMM"
+        let start_time_hhmm = trading_start_time.replace(":", "").chars().take(4).collect::<String>();
+        let end_time_hhmm = trading_end_time.replace(":", "").chars().take(4).collect::<String>();
 
-        if let Ok(current_price) = exact_result {
-            if current_price > 0.0 {
-                return Ok(current_price);
-            }
+        if time_str.len() < 12 {
+            return Err(StockrsError::price_inquiry(
+                stockcode,
+                "현재가",
+                format!("잘못된 시간 형식: {}", time_str),
+            ));
         }
 
-        // 정확한 시간이 없으면, 해당 시간 이하의 가장 최근 데이터 조회 (1분봉 DB)
-        let fallback_query = "SELECT close FROM \"{}\" WHERE date < ? ORDER BY date DESC LIMIT 1";
+        let date_part = &time_str[0..8]; // YYYYMMDD
+        let time_part = &time_str[8..12]; // HHMM
 
+        // 시간대별 처리
+        let target_time = if time_part < start_time_hhmm.as_str() {
+            // 거래 시작 시간 이전: 거래 시작 시간의 값 사용
+            debug!(
+                "🕐 [DbApi::get_current_price_at_time] 거래 시작 시간 이전: {} -> {} (종목: {})",
+                time_str, format!("{}{}", date_part, start_time_hhmm), stockcode
+            );
+            format!("{}{}", date_part, start_time_hhmm)
+        } else if time_part > end_time_hhmm.as_str() {
+            // 거래 종료 시간 이후: 거래 종료 시간의 값 사용
+            debug!(
+                "🕐 [DbApi::get_current_price_at_time] 거래 종료 시간 이후: {} -> {} (종목: {})",
+                time_str, format!("{}{}", date_part, end_time_hhmm), stockcode
+            );
+            format!("{}{}", date_part, end_time_hhmm)
+        } else {
+            // 거래 시간 내: 원래 시간 사용
+            time_str.to_string()
+        };
+
+        // SQL 쿼리 실행
+        let query = "SELECT close FROM \"{}\" WHERE date = ?";
         let mut stmt = self
             .minute_db_connection
-            .prepare(&fallback_query.replace("{}", stockcode))
+            .prepare(&query.replace("{}", stockcode))
             .map_err(|_e| {
-                StockrsError::database_query(format!(
+                StockrsError::general(format!(
                     "SQL 준비 실패: {} (테이블: {})",
-                    fallback_query, stockcode
+                    query, stockcode
                 ))
             })?;
 
-        let current_price: f64 = stmt.query_row([time_str], |row| row.get(0)).map_err(|_e| {
-            StockrsError::price_inquiry(
+        let result: Result<f64, _> = stmt.query_row([&target_time], |row| row.get(0));
+
+        match result {
+            Ok(current_price) if current_price > 0.0 => {
+                debug!(
+                    "✅ [DbApi::get_current_price_at_time] 현재가 조회 성공: 종목={}, 시간={}, 가격={}",
+                    stockcode, target_time, current_price
+                );
+                Ok(current_price)
+            }
+            Ok(_) => Err(StockrsError::price_inquiry(
+                stockcode,
+                "현재가",
+                format!("유효하지 않은 가격 데이터 (시간: {})", target_time),
+            )),
+            Err(_) => Err(StockrsError::price_inquiry(
                 stockcode,
                 "현재가",
                 format!(
                     "해당 종목의 데이터가 1분봉 DB에 존재하지 않습니다 (시간: {})",
-                    time_str
+                    target_time
                 ),
-            )
-        })?;
-
-        if current_price > 0.0 {
-            Ok(current_price)
-        } else {
-            Err(StockrsError::price_inquiry(
-                stockcode,
-                "현재가",
-                format!(
-                    "해당 종목의 현재가 데이터를 찾을 수 없습니다 (시간: {})",
-                    time_str
-                ),
-            ))
+            )),
         }
     }
 
@@ -157,7 +165,7 @@ impl DbApi {
                 tables_query
             );
             println!("❌ [DbApi::get_top_amount_stocks:425] 오류: {}", e);
-            StockrsError::database_query(format!("SQL 준비 실패: {}", tables_query))
+            StockrsError::general(format!("SQL 준비 실패: {}", tables_query))
         })?;
 
         let tables = stmt
@@ -237,7 +245,7 @@ impl DbApi {
                 table_check_query
             );
             println!("❌ [DbApi::debug_db_structure:485] 오류: {}", e);
-            StockrsError::database_query(format!("SQL 준비 실패: {}", table_check_query))
+            StockrsError::general(format!("SQL 준비 실패: {}", table_check_query))
         })?;
 
         let table_exists: Result<String, _> = stmt.query_row([stockcode], |row| row.get(0));
@@ -258,7 +266,7 @@ impl DbApi {
                 schema_query
             );
             println!("❌ [DbApi::debug_db_structure:495] 오류: {}", e);
-            StockrsError::database_query(format!(
+            StockrsError::general(format!(
                 "SQL 준비 실패: {} (테이블: {})",
                 schema_query, stockcode
             ))
@@ -270,7 +278,7 @@ impl DbApi {
                 schema_query
             );
             println!("❌ [DbApi::debug_db_structure:500] 오류: {}", e);
-            StockrsError::database_query(format!(
+            StockrsError::general(format!(
                 "SQL 실행 실패: {} (테이블: {})",
                 schema_query, stockcode
             ))
@@ -299,7 +307,7 @@ impl DbApi {
                 sample_query
             );
             println!("❌ [DbApi::debug_db_structure:515] 오류: {}", e);
-            StockrsError::database_query(format!(
+            StockrsError::general(format!(
                 "SQL 준비 실패: {} (테이블: {})",
                 sample_query, stockcode
             ))
@@ -311,7 +319,7 @@ impl DbApi {
                 sample_query
             );
             println!("❌ [DbApi::debug_db_structure:520] 오류: {}", e);
-            StockrsError::database_query(format!(
+            StockrsError::general(format!(
                 "SQL 실행 실패: {} (테이블: {})",
                 sample_query, stockcode
             ))
@@ -340,7 +348,7 @@ impl DbApi {
                 count_query
             );
             println!("❌ [DbApi::debug_db_structure:535] 오류: {}", e);
-            StockrsError::database_query(format!(
+            StockrsError::general(format!(
                 "SQL 준비 실패: {} (테이블: {})",
                 count_query, stockcode
             ))
@@ -352,7 +360,7 @@ impl DbApi {
                 count_query
             );
             println!("❌ [DbApi::debug_db_structure:540] 오류: {}", e);
-            StockrsError::database_query(format!(
+            StockrsError::general(format!(
                 "SQL 실행 실패: {} (테이블: {})",
                 count_query, stockcode
             ))
@@ -362,26 +370,26 @@ impl DbApi {
 
         Ok(())
     }
+
+
 }
 
-// StockApi trait 구현 - 데이터 조회 전담으로 변경
+// StockApi trait 구현
 impl StockApi for DbApi {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 
     fn execute_order(&self, _order: &mut Order) -> StockrsResult<String> {
-        // DbApi는 주문 실행을 지원하지 않음 (BacktestApi에서 담당)
         Err(StockrsError::order_execution(
             "주문 실행".to_string(),
             "N/A".to_string(),
             0,
-            "DbApi는 주문 실행을 지원하지 않습니다. BacktestApi를 사용하세요.".to_string(),
+            "DbApi는 주문 실행을 지원하지 않습니다.".to_string(),
         ))
     }
 
     fn check_fill(&self, _order_id: &str) -> StockrsResult<bool> {
-        // DbApi는 체결 확인을 지원하지 않음
         Err(StockrsError::order_execution(
             "체결 확인".to_string(),
             "N/A".to_string(),
@@ -391,7 +399,6 @@ impl StockApi for DbApi {
     }
 
     fn cancel_order(&self, _order_id: &str) -> StockrsResult<()> {
-        // DbApi는 주문 취소를 지원하지 않음
         Err(StockrsError::order_execution(
             "주문 취소".to_string(),
             "N/A".to_string(),
@@ -401,50 +408,40 @@ impl StockApi for DbApi {
     }
 
     fn get_balance(&self) -> StockrsResult<AssetInfo> {
-        // DbApi는 잔고 조회를 지원하지 않음 (BacktestApi에서 담당)
         Err(StockrsError::BalanceInquiry {
-            reason: "DbApi는 잔고 조회를 지원하지 않습니다. BacktestApi를 사용하세요.".to_string(),
+            reason: "DbApi는 잔고 조회를 지원하지 않습니다.".to_string(),
         })
     }
 
     fn get_avg_price(&self, _stockcode: &str) -> StockrsResult<f64> {
-        // DbApi는 평균가 조회를 지원하지 않음 (BacktestApi에서 담당)
         Err(StockrsError::price_inquiry(
             "N/A",
             "평균가",
-            "DbApi는 평균가 조회를 지원하지 않습니다. BacktestApi를 사용하세요.".to_string(),
+            "DbApi는 평균가 조회를 지원하지 않습니다.".to_string(),
         ))
     }
 
     fn get_current_price(&self, _stockcode: &str) -> StockrsResult<f64> {
-        // DbApi는 현재가 조회를 지원하지 않음 (시간 정보가 필요함)
         Err(StockrsError::price_inquiry(
             "N/A",
             "현재가",
-            "DbApi는 현재가 조회를 지원하지 않습니다. get_current_price_at_time을 사용하세요."
-                .to_string(),
+            "DbApi는 현재가 조회를 지원하지 않습니다.".to_string(),
         ))
     }
 
     fn get_current_price_at_time(&self, stockcode: &str, time_str: &str) -> StockrsResult<f64> {
-        // DbApi는 시간 기반 현재가 조회를 지원
         self.get_current_price_at_time(stockcode, time_str)
     }
 
     fn set_current_time(&self, _time_str: &str) -> StockrsResult<()> {
-        // DbApi는 현재 시간 설정을 지원하지 않음
         Ok(())
     }
 
-    /// DB 연결을 반환 (특징 계산용)
     fn get_db_connection(&self) -> Option<rusqlite::Connection> {
-        // Connection을 복제하여 반환 (새로운 연결 생성)
         Connection::open(self.db_connection.path().unwrap_or_default()).ok()
     }
 
-    /// 일봉 DB 연결을 반환 (특징 계산용)
     fn get_daily_db_connection(&self) -> Option<rusqlite::Connection> {
-        // Connection을 복제하여 반환 (새로운 연결 생성)
         Connection::open(self.daily_db_connection.path().unwrap_or_default()).ok()
     }
 }

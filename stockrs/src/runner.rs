@@ -5,6 +5,7 @@ use crate::utility::errors::{StockrsError, StockrsResult};
 use crate::model::{ApiBundle, Model};
 use crate::time::TimeService;
 use crate::utility::types::api::{ApiType, SharedApi};
+use crate::utility::types::trading::TradingMode;
 use crate::utility::config;
 
 use chrono::Timelike;
@@ -22,7 +23,6 @@ pub struct Runner {
     pub api_type: ApiType,
 
     /// prototype.py의 각 컴포넌트들
-    pub time: TimeService,
     pub model: Box<dyn Model>,
     pub broker: StockBroker,
     pub db_manager: DBManager,
@@ -35,18 +35,27 @@ pub struct Runner {
 }
 
 impl Runner {
+    /// ApiType을 TradingMode로 변환
+    fn api_type_to_trading_mode(api_type: ApiType) -> TradingMode {
+        match api_type {
+            ApiType::Real => TradingMode::Real,
+            ApiType::Paper => TradingMode::Paper,
+            ApiType::Backtest => TradingMode::Backtest,
+        }
+    }
+
     /// prototype.py의 __init__과 동일한 초기화 로직
     pub fn new(
         api_type: ApiType,
         model: Box<dyn Model>,
         db_path: std::path::PathBuf,
     ) -> StockrsResult<Self> {
-        // TimeService 먼저 생성
-        let time_service = TimeService::new()
+        // TimeService 전역 초기화
+        TimeService::init()
             .map_err(|e| StockrsError::general(format!("시간 서비스 초기화 실패: {}", e)))?;
 
-        // 모드별 API 구성 (TimeService 전달)
-        let api_config = Self::create_api_config(api_type, &time_service)?;
+        // 모드별 API 구성
+        let api_config = Self::create_api_config(api_type)?;
 
         println!(
             "🚀 [Runner] {} 모드로 초기화 완료",
@@ -59,7 +68,6 @@ impl Runner {
 
         Ok(Runner {
             api_type,
-            time: time_service,
             model,
             broker: StockBroker::new(api_config.broker_api.clone()),
             db_manager: DBManager::new(db_path, api_config.db_manager_api)?,
@@ -69,7 +77,9 @@ impl Runner {
     }
 
     /// 모드별 API 구성 생성
-    fn create_api_config(api_type: ApiType, time_service: &TimeService) -> StockrsResult<ApiConfig> {
+    fn create_api_config(api_type: ApiType) -> StockrsResult<ApiConfig> {
+        let current_mode = Self::api_type_to_trading_mode(api_type);
+        
         match api_type {
             ApiType::Real => {
                 // 실전: 정보 API + 실전 API + DB API
@@ -77,12 +87,17 @@ impl Runner {
                 let info_api: SharedApi = std::rc::Rc::new(KoreaApi::new_info()?);
                 let db_api: SharedApi = std::rc::Rc::new(DbApi::new()?);
 
-                let api_bundle =
-                    ApiBundle::new(real_api.clone(), real_api.clone(), info_api, db_api.clone());
+                let api_bundle = ApiBundle::new(
+                    current_mode,
+                    real_api.clone(),
+                    real_api.clone(),
+                    info_api,
+                    db_api.clone(),
+                );
 
                 Ok(ApiConfig {
-                    broker_api: real_api,
-                    db_manager_api: db_api,
+                    broker_api: real_api.clone(),
+                    db_manager_api: real_api, // 실전투자에서는 real_api 사용 (잔고 조회용)
                     api_bundle,
                 })
             }
@@ -93,6 +108,7 @@ impl Runner {
                 let db_api: SharedApi = std::rc::Rc::new(DbApi::new()?);
 
                 let api_bundle = ApiBundle::new(
+                    current_mode,
                     paper_api.clone(),
                     paper_api.clone(),
                     info_api,
@@ -100,18 +116,18 @@ impl Runner {
                 );
 
                 Ok(ApiConfig {
-                    broker_api: paper_api,
-                    db_manager_api: db_api,
+                    broker_api: paper_api.clone(),
+                    db_manager_api: paper_api, // 모의투자에서는 paper_api 사용 (잔고 조회용)
                     api_bundle,
                 })
             }
             ApiType::Backtest => {
                 // 백테스팅: DB API + 백테스팅 API + DB API
                 let db_api: SharedApi = std::rc::Rc::new(DbApi::new()?);
-                let time_service_rc = std::rc::Rc::new(time_service.clone());
-                let backtest_api: SharedApi = std::rc::Rc::new(BacktestApi::new(db_api.clone(), time_service_rc)?);
+                let backtest_api: SharedApi = std::rc::Rc::new(BacktestApi::new(db_api.clone())?);
 
                 let api_bundle = ApiBundle::new_with_backtest_apis(
+                    current_mode,
                     backtest_api.clone(),
                     backtest_api.clone(),
                     backtest_api.clone(),
@@ -132,34 +148,32 @@ impl Runner {
     /// prototype.py의 run() 메서드와 동일한 메인 루프
     pub fn run(&mut self) -> StockrsResult<()> {
         // prototype.py: on start
-        self.time.on_start()?;
+        TimeService::global_on_start()?;
+        
+        // 장 중간 진입 처리 (모의투자/실거래에서만)
+        let trading_mode = Self::api_type_to_trading_mode(self.api_type);
+        TimeService::global_handle_mid_session_entry(trading_mode)?;
+        
         self.model.on_start()?;
 
         // 백테스팅 모드에서는 현재 시간을 전달
         let current_time = if self.api_type == ApiType::Backtest {
-            Some(self.time.format_ymdhm())
+            Some(TimeService::global_format_ymdhm()?)
         } else {
             None
         };
         self.db_manager
-            .on_start(self.time.now().date_naive(), current_time)?;
-
-
+            .on_start(TimeService::global_now()?.date_naive(), current_time)?;
 
         self.broker.on_start()?;
 
         // prototype.py: while not self.stop_condition:
         while !self.stop_condition {
-            // prototype.py: self.time.update()
-            self.time.update()?;
-
-
-
             // prototype.py: wait_until_next_event(self.time)
             self.wait_until_next_event()?;
 
             // prototype.py: result = self.model.on_event(self.time)
-            let result = self.model.on_event(&self.time, &self.api_bundle)?;
+            let result = self.model.on_event(&self.api_bundle)?;
 
             // prototype.py: broker on event
             if let Some(mut order) = result {
@@ -173,14 +187,14 @@ impl Runner {
 
                         // 백테스팅 모드에서는 현재 시간을 전달
                         let current_time = if self.api_type == ApiType::Backtest {
-                            Some(self.time.format_ymdhm())
+                            Some(TimeService::global_format_ymdhm()?)
                         } else {
                             None
                         };
 
                         if let Err(e) =
                             self.db_manager
-                                .on_event(self.time.now().date_naive(), current_time, ())
+                                .on_event(TimeService::global_now()?.date_naive(), current_time, ())
                         {
                             println!("❌ [Runner] DB 매니저 이벤트 처리 실패: {}", e);
                             return Err(StockrsError::general(format!(
@@ -202,12 +216,12 @@ impl Runner {
 
         // 백테스팅 모드에서는 현재 시간을 전달
         let current_time = if self.api_type == ApiType::Backtest {
-            Some(self.time.format_ymdhm())
+            Some(TimeService::global_format_ymdhm()?)
         } else {
             None
         };
         self.db_manager
-            .on_end(self.time.now().date_naive(), current_time)?;
+            .on_end(TimeService::global_now()?.date_naive(), current_time)?;
         self.broker.on_end()?;
 
         Ok(())
@@ -218,9 +232,8 @@ impl Runner {
     fn wait_until_next_event(&mut self) -> StockrsResult<()> {
         use crate::time::TimeSignal;
 
-        // 현재 시간과 신호 확인
-        let current_time = self.time.now();
-        let current_signal = self.time.now_signal();
+        // TradingMode 결정
+        let trading_mode = Self::api_type_to_trading_mode(self.api_type);
 
         // end_date 체크 (백테스팅 모드에서만)
         if self.api_type == ApiType::Backtest {
@@ -239,7 +252,7 @@ impl Runner {
                 })?;
 
                 if let Some(end_date) = chrono::NaiveDate::from_ymd_opt(year, month, day) {
-                    let current_date = current_time.date_naive();
+                    let current_date = TimeService::global_now()?.date_naive();
 
                     // 현재 날짜가 end_date를 지났으면 중지
                     if current_date > end_date {
@@ -253,24 +266,25 @@ impl Runner {
             }
         }
 
-        // 백테스팅에서 장 마감 시점(15:20)에 finish_overview 호출
+        // 백테스팅에서 장 마감 시점(15:30)에 finish_overview 호출
         if self.api_type == ApiType::Backtest {
+            let current_time = TimeService::global_now()?;
             let hour = current_time.hour();
             let minute = current_time.minute();
 
-            if hour == 15 && minute == 20 {
+            if hour == 15 && minute == 30 {
                 // println!("📊 [Runner] 장 마감 시점 - 당일 overview 마감 처리");
 
                 // 백테스팅 모드에서는 현재 시간을 전달
                 let current_time_str = if self.api_type == ApiType::Backtest {
-                    Some(self.time.now().format("%Y%m%d%H%M").to_string())
+                    Some(TimeService::global_now()?.format("%Y%m%d%H%M").to_string())
                 } else {
                     None
                 };
 
                 if let Err(e) = self
                     .db_manager
-                    .finish_overview(self.time.now().date_naive(), current_time_str)
+                    .finish_overview(TimeService::global_now()?.date_naive(), current_time_str)
                 {
                     println!("❌ [Runner] 당일 overview 마감 실패: {}", e);
                     return Err(StockrsError::general(format!(
@@ -283,64 +297,12 @@ impl Runner {
             }
         }
 
-        // 통합된 "다음 거래일로 이동해야 하는 상황" 체크 - TimeService로 통합
-        let should_skip_to_next_day = self.time.should_skip_to_next_trading_day();
+        // 현재 신호 확인 (전역 인스턴스에서)
+        let current_signal = TimeService::global_now_signal()?;
 
-        if should_skip_to_next_day {
-            // TimeService의 다음 거래일로 이동 메서드 사용
-            if let Err(e) = self.time.skip_to_next_trading_day() {
-                println!("❌ [Runner] 다음 거래일 이동 실패: {}", e);
-                return Err(StockrsError::general(format!(
-                    "다음 거래일 이동 실패: {}",
-                    e
-                )));
-            }
-
-            let next_date = self.time.now().date_naive();
-
-            // 백테스팅에서는 새로운 거래일 시작 시 객체 리셋
-            if self.api_type == ApiType::Backtest {
-                println!(
-                    "📅 [Runner] 새로운 거래일 시작: {}",
-                    next_date.format("%Y-%m-%d")
-                );
-
-                // 매일 새로운 거래일을 위해 모든 객체 리셋
-                if let Err(e) = self.model.reset_for_new_day() {
-                    println!("❌ [Runner] 모델 리셋 실패: {}", e);
-                    return Err(StockrsError::general(format!("모델 리셋 실패: {}", e)));
-                }
-
-                if let Err(e) = self.broker.reset_for_new_day() {
-                    println!("❌ [Runner] 브로커 리셋 실패: {}", e);
-                    return Err(StockrsError::general(format!("브로커 리셋 실패: {}", e)));
-                }
-
-                // 백테스팅 모드에서는 현재 시간을 전달
-                let current_time = if self.api_type == ApiType::Backtest {
-                    Some(self.time.now().format("%H:%M:%S").to_string())
-                } else {
-                    None
-                };
-
-                if let Err(e) = self
-                    .db_manager
-                    .reset_for_new_day(self.time.now().date_naive(), current_time)
-                {
-                    println!("❌ [Runner] DB 매니저 리셋 실패: {}", e);
-                    return Err(StockrsError::general(format!("DB 매니저 리셋 실패: {}", e)));
-                }
-
-                return Ok(());
-            } else {
-                // 실거래/모의투자는 실제 대기
-                self.time.wait_until(self.time.now());
-            }
-        }
-
-        // Overnight 신호일 때는 백테스팅에서 새로운 거래일 시작 처리
-        if current_signal == TimeSignal::Overnight && self.api_type == ApiType::Backtest {
-            let next_date = self.time.now().date_naive();
+        // 백테스팅에서 새로운 거래일 시작 시 객체 리셋
+        if self.api_type == ApiType::Backtest && current_signal == TimeSignal::Overnight {
+            let next_date = TimeService::global_now()?.date_naive();
             println!(
                 "📅 [Runner] 새로운 거래일 시작: {}",
                 next_date.format("%Y-%m-%d")
@@ -359,21 +321,22 @@ impl Runner {
 
             // 백테스팅 모드에서는 현재 시간을 전달
             let current_time = if self.api_type == ApiType::Backtest {
-                Some(self.time.now().format("%H:%M:%S").to_string())
+                Some(TimeService::global_now()?.format("%H:%M:%S").to_string())
             } else {
                 None
             };
 
             if let Err(e) = self
                 .db_manager
-                .reset_for_new_day(self.time.now().date_naive(), current_time)
+                .reset_for_new_day(TimeService::global_now()?.date_naive(), current_time)
             {
                 println!("❌ [Runner] DB 매니저 리셋 실패: {}", e);
                 return Err(StockrsError::general(format!("DB 매니저 리셋 실패: {}", e)));
             }
-
-            return Ok(());
         }
+
+        // TimeService의 통합된 대기 로직 사용
+        TimeService::global_wait_until_next_event(trading_mode)?;
 
         Ok(())
     }

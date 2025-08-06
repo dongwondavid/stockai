@@ -100,6 +100,8 @@ pub enum Error {
     #[error(transparent)]
     JsonError(#[from] json::JsonError),
     #[error(transparent)]
+    SerdeJsonError(#[from] serde_json::Error),
+    #[error(transparent)]
     ChronoError(#[from] chrono::ParseError),
     #[error(transparent)]
     ParseIntError(#[from] std::num::ParseIntError),
@@ -114,8 +116,8 @@ pub enum Error {
     #[error(transparent)]
     IoError(#[from] std::io::Error),
     // custom
-    #[error("Auth init failed - None value in {0}")]
-    AuthInitFailed(&'static str),
+    #[error("Auth init failed - {0}")]
+    AuthInitFailed(String),
     #[error("Broken protocol - {0}: {1}")]
     BrokenProtocol(&'static str, String),
     #[error("The remote websocket server sent invalid data")]

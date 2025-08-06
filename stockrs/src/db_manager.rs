@@ -231,7 +231,7 @@ impl DBManager {
             "SELECT COUNT(*) FROM overview WHERE date = ?",
             (date_str.clone(),),
             |row| row.get(0),
-        )?;
+        ).unwrap_or(0);
 
         if existing_count > 0 {
             info!(
@@ -291,10 +291,10 @@ impl DBManager {
             "SELECT COUNT(*) FROM overview WHERE date = ?",
             (date_str.clone(),),
             |row| row.get(0),
-        )?;
+        ).unwrap_or(0);
 
         if data_exists == 0 {
-            warn!("⚠️ [DBManager::update_overview] {} 날짜의 overview 데이터가 없습니다. 새로 생성합니다.", date_str);
+            info!("📊 [DBManager::update_overview] {} 날짜의 overview 데이터가 없습니다. 새로 생성합니다.", date_str);
 
             // overview 데이터가 없으면 새로 생성
             self.conn.execute(
@@ -321,11 +321,11 @@ impl DBManager {
         ) {
             Ok(values) => values,
             Err(e) => {
-                error!(
-                    "❌ [DBManager::update_overview] overview 데이터 조회 실패: {}",
+                warn!(
+                    "⚠️ [DBManager::update_overview] overview 데이터 조회 실패: {}, 현재 자산으로 초기화",
                     e
                 );
-                return Err(e);
+                (asset, asset) // 데이터가 없으면 현재 자산으로 초기화
             }
         };
 
@@ -389,8 +389,8 @@ impl DBManager {
         ) {
             Ok(value) => value,
             Err(e) => {
-                error!("❌ [DBManager::finish_overview] open 값 조회 실패: {}", e);
-                return Err(e);
+                warn!("⚠️ [DBManager::finish_overview] open 값 조회 실패: {}, 현재 자산으로 대체", e);
+                asset // open 값이 없으면 현재 자산으로 대체
             }
         };
 
@@ -403,51 +403,24 @@ impl DBManager {
         let daily_profit = close - open;
         let daily_roi = daily_profit / open * 100.0;
 
-        // 오늘 날짜의 수수료, 총 거래대금, 총 거래량 조회
-        let fee_sum: Option<f64> = match self.conn.query_row(
-            "SELECT SUM(fee) FROM trading WHERE date = ?",
+        // 오늘 날짜의 수수료, 총 거래대금, 총 거래량 조회 (거래가 없어도 안전하게 처리)
+        let fee_sum: Option<f64> = self.conn.query_row(
+            "SELECT COALESCE(SUM(fee), 0.0) FROM trading WHERE date = ?",
             (date_str.clone(),),
             |row| row.get(0),
-        ) {
-            Ok(value) => value,
-            Err(e) => {
-                warn!(
-                    "⚠️ [DBManager::finish_overview] 수수료 합계 조회 실패: {}",
-                    e
-                );
-                None
-            }
-        };
+        ).ok();
 
-        let turnover_sum: Option<f64> = match self.conn.query_row(
-            "SELECT SUM(price * quantity) FROM trading WHERE date = ?",
+        let turnover_sum: Option<f64> = self.conn.query_row(
+            "SELECT COALESCE(SUM(price * quantity), 0.0) FROM trading WHERE date = ?",
             (date_str.clone(),),
             |row| row.get(0),
-        ) {
-            Ok(value) => value,
-            Err(e) => {
-                warn!(
-                    "⚠️ [DBManager::finish_overview] 거래대금 합계 조회 실패: {}",
-                    e
-                );
-                None
-            }
-        };
+        ).ok();
 
-        let volume_sum: Option<i64> = match self.conn.query_row(
-            "SELECT SUM(quantity) FROM trading WHERE date = ?",
+        let volume_sum: Option<i64> = self.conn.query_row(
+            "SELECT COALESCE(SUM(quantity), 0) FROM trading WHERE date = ?",
             (date_str.clone(),),
             |row| row.get(0),
-        ) {
-            Ok(value) => value,
-            Err(e) => {
-                warn!(
-                    "⚠️ [DBManager::finish_overview] 거래량 합계 조회 실패: {}",
-                    e
-                );
-                None
-            }
-        };
+        ).ok();
 
         // 거래 기록이 없는 경우 기본값 사용
         let fee = fee_sum.unwrap_or(0.0);
@@ -455,7 +428,9 @@ impl DBManager {
         let volume = volume_sum.unwrap_or(0);
 
         if volume == 0 {
-            info!("📊 [DBManager::finish_overview] 당일 거래 기록이 없습니다 - 기본값으로 처리");
+            info!("📊 [DBManager::finish_overview] 당일 거래 기록이 없습니다 - 기본값으로 처리 (수수료: 0원, 거래대금: 0원, 거래량: 0주)");
+        } else {
+            debug!("📊 [DBManager::finish_overview] 거래 기록: 수수료 {:.0}원, 거래대금 {:.0}원, 거래량 {}주", fee, turnover, volume);
         }
 
         self.conn.execute(

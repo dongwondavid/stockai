@@ -12,6 +12,9 @@ pub struct Auth {
     appsecret: String,
     token: Option<String>,
     approval_key: Option<String>,
+    /// 토큰 생성 응답 정보를 저장하기 위한 필드들
+    token_response: Option<response::auth::Body::TokenCreation>,
+    token_issued_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl Auth {
@@ -36,6 +39,8 @@ impl Auth {
             appsecret: appsecret.to_string(),
             token: None,
             approval_key: None,
+            token_response: None,
+            token_issued_at: None,
         }
     }
 
@@ -57,6 +62,16 @@ impl Auth {
     /// 구조체에 저장되어 있는 appsecret 반환
     pub fn get_appsecret(&self) -> String {
         self.appsecret.clone()
+    }
+
+    /// 토큰 생성 응답 정보를 가져오기
+    pub fn get_token_response(&self) -> Option<&response::auth::Body::TokenCreation> {
+        self.token_response.as_ref()
+    }
+
+    /// 토큰 발급 시간을 가져오기
+    pub fn get_token_issued_at(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        self.token_issued_at
     }
 
     /// 실시간 (웹소켓) 접속키 발급[실시간-000]
@@ -115,23 +130,48 @@ impl Auth {
     /// [Docs](https://apiportal.koreainvestment.com/apiservice/oauth2#L_fa778c98-f68d-451e-8fff-b1c6bfe5cd30)
     /// token값을 얻어와서 반환함과 동시에 구조체의 token을 업데이트
     pub async fn create_token(&mut self) -> Result<String, Error> {
-        let token = self
+        let request_url = format!("{}/oauth2/tokenP", self.endpoint_url);
+        let request_body = serde_json::json!(request::auth::TokenCreationBody::new(
+            self.appsecret.clone(),
+            self.appkey.clone(),
+        )).to_string();
+        
+        // 디버깅: 요청 정보 출력
+        // println!("🔍 [create_token] 요청 URL: {}", request_url);
+        // println!("🔍 [create_token] 요청 헤더: Content-Type: application/json");
+        // println!("🔍 [create_token] 요청 바디: {}", request_body);
+        // println!("🔍 [create_token] 사용된 appkey: {}", self.appkey);
+        // println!("🔍 [create_token] 사용된 appsecret: {}", self.appsecret);
+        
+        let response = self
             .client
-            .post(format!("{}/oauth2/tokenP", self.endpoint_url))
+            .post(&request_url)
             .header("Content-Type", "application/json")
-            .body(
-                serde_json::json!(request::auth::TokenCreationBody::new(
-                    self.appsecret.clone(),
-                    self.appkey.clone(),
-                ))
-                .to_string(),
-            )
+            .body(request_body)
             .send()
-            .await?
-            .json::<response::auth::Body::TokenCreation>()
-            .await?
-            .get_access_token();
+            .await?;
+
+        // 응답 텍스트를 먼저 가져와서 에러인지 확인
+        let response_text = response.text().await?;
+        
+        // 디버깅: 응답 정보 출력
+        // println!("🔍 [create_token] 응답 텍스트: {}", response_text);
+        
+        // JSON으로 파싱해서 에러 응답인지 확인
+        if let Ok(error_response) = serde_json::from_str::<response::auth::Body::ApiError>(&response_text) {
+            return Err(Error::AuthInitFailed(format!(
+                "API 에러: {} - {}",
+                error_response.error_code,
+                error_response.error_description
+            )));
+        }
+
+        // 성공 응답으로 파싱
+        let token_response: response::auth::Body::TokenCreation = serde_json::from_str(&response_text)?;
+        let token = token_response.get_access_token();
         self.token = Some(token.clone());
+        self.token_response = Some(token_response);
+        self.token_issued_at = Some(chrono::Utc::now());
         Ok(token)
     }
 
@@ -158,7 +198,7 @@ impl Auth {
                     match self.token.clone() {
                         Some(token) => token,
                         None => {
-                            return Err(Error::AuthInitFailed("token"));
+                            return Err(Error::AuthInitFailed("token".to_string()));
                         }
                     }
                 ))

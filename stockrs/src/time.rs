@@ -2,10 +2,16 @@ use crate::utility::trading_calender::TradingCalender;
 use crate::utility::errors::{StockrsError, StockrsResult};
 use crate::utility::config;
 use crate::local_time;
-use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, TimeZone};
+use crate::utility::types::trading::TradingMode;
+use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Timelike};
 use std::thread;
 use std::collections::HashSet;
 use std::fs;
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
+
+/// 전역 TimeService 인스턴스 (싱글톤)
+static TIME_SERVICE: Lazy<Mutex<Option<TimeService>>> = Lazy::new(|| Mutex::new(None));
 
 /// Signals corresponding to specific time events within the trading day
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -16,7 +22,7 @@ pub enum TimeSignal {
     MarketOpen,
     /// 09:01 ~ 15:29 1분 단위 업데이트
     Update,
-    /// 15:30 장 종료 알림
+    /// 15:20 장 종료 알림
     MarketClose,
     /// 장 종료 후 다음 영업일 08:30까지 대기
     Overnight,
@@ -40,6 +46,112 @@ pub struct TimeService {
 }
 
 impl TimeService {
+    /// 전역 TimeService 인스턴스 초기화
+    pub fn init() -> StockrsResult<()> {
+        let time_service = Self::new()?;
+        let mut global = TIME_SERVICE.lock().map_err(|e| {
+            StockrsError::general(format!("TimeService 전역 뮤텍스 락 실패: {}", e))
+        })?;
+        *global = Some(time_service);
+        Ok(())
+    }
+
+    /// 전역 TimeService 인스턴스 가져오기
+    pub fn get() -> StockrsResult<&'static Mutex<Option<TimeService>>> {
+        Ok(&TIME_SERVICE)
+    }
+
+    /// 전역 TimeService 인스턴스의 현재 시간 가져오기
+    pub fn global_now() -> StockrsResult<DateTime<Local>> {
+        let global = TIME_SERVICE.lock().map_err(|e| {
+            StockrsError::general(format!("TimeService 전역 뮤텍스 락 실패: {}", e))
+        })?;
+        
+        if let Some(time_service) = global.as_ref() {
+            Ok(time_service.now())
+        } else {
+            Err(StockrsError::general("TimeService가 초기화되지 않았습니다".to_string()))
+        }
+    }
+
+    /// 전역 TimeService 인스턴스의 현재 신호 가져오기
+    pub fn global_now_signal() -> StockrsResult<TimeSignal> {
+        let global = TIME_SERVICE.lock().map_err(|e| {
+            StockrsError::general(format!("TimeService 전역 뮤텍스 락 실패: {}", e))
+        })?;
+        
+        if let Some(time_service) = global.as_ref() {
+            Ok(time_service.now_signal())
+        } else {
+            Err(StockrsError::general("TimeService가 초기화되지 않았습니다".to_string()))
+        }
+    }
+
+    /// 전역 TimeService 인스턴스 업데이트
+    pub fn global_update() -> StockrsResult<()> {
+        let mut global = TIME_SERVICE.lock().map_err(|e| {
+            StockrsError::general(format!("TimeService 전역 뮤텍스 락 실패: {}", e))
+        })?;
+        
+        if let Some(time_service) = global.as_mut() {
+            time_service.update()
+        } else {
+            Err(StockrsError::general("TimeService가 초기화되지 않았습니다".to_string()))
+        }
+    }
+
+    /// 전역 TimeService 인스턴스 on_start
+    pub fn global_on_start() -> StockrsResult<()> {
+        let mut global = TIME_SERVICE.lock().map_err(|e| {
+            StockrsError::general(format!("TimeService 전역 뮤텍스 락 실패: {}", e))
+        })?;
+        
+        if let Some(time_service) = global.as_mut() {
+            time_service.on_start()
+        } else {
+            Err(StockrsError::general("TimeService가 초기화되지 않았습니다".to_string()))
+        }
+    }
+
+    /// 전역 TimeService 인스턴스 handle_mid_session_entry
+    pub fn global_handle_mid_session_entry(trading_mode: TradingMode) -> StockrsResult<()> {
+        let mut global = TIME_SERVICE.lock().map_err(|e| {
+            StockrsError::general(format!("TimeService 전역 뮤텍스 락 실패: {}", e))
+        })?;
+        
+        if let Some(time_service) = global.as_mut() {
+            time_service.handle_mid_session_entry(trading_mode)
+        } else {
+            Err(StockrsError::general("TimeService가 초기화되지 않았습니다".to_string()))
+        }
+    }
+
+    /// 전역 TimeService 인스턴스 wait_until_next_event
+    pub fn global_wait_until_next_event(trading_mode: TradingMode) -> StockrsResult<()> {
+        let mut global = TIME_SERVICE.lock().map_err(|e| {
+            StockrsError::general(format!("TimeService 전역 뮤텍스 락 실패: {}", e))
+        })?;
+        
+        if let Some(time_service) = global.as_mut() {
+            time_service.wait_until_next_event(trading_mode)
+        } else {
+            Err(StockrsError::general("TimeService가 초기화되지 않았습니다".to_string()))
+        }
+    }
+
+    /// 전역 TimeService 인스턴스의 시간 포맷 메서드들
+    pub fn global_format_ymdhm() -> StockrsResult<String> {
+        let global = TIME_SERVICE.lock().map_err(|e| {
+            StockrsError::general(format!("TimeService 전역 뮤텍스 락 실패: {}", e))
+        })?;
+        
+        if let Some(time_service) = global.as_ref() {
+            Ok(time_service.format_ymdhm())
+        } else {
+            Err(StockrsError::general("TimeService가 초기화되지 않았습니다".to_string()))
+        }
+    }
+
     /// 새로운 `TimeService` 인스턴스를 생성합니다.
     ///
     /// config.toml의 start_date를 읽어서 시작 시간을 설정하고,
@@ -132,7 +244,7 @@ impl TimeService {
             special_start_dates,
             special_start_time_offset_minutes,
         };
-        let (next_time, signal) = service.compute_next_time();
+        let (next_time, signal) = service.compute_next_time()?;
         service.current = next_time;
         service.current_signal = signal;
         Ok(service)
@@ -159,16 +271,14 @@ impl TimeService {
     /// 현재 시간 캐시를 업데이트합니다.
     /// 백테스팅 모드에서는 시간 단위 일관성을 보장하고,
     /// 실시간 모드에서는 적절한 시간 갱신 주기를 설정합니다.
-    pub fn update_cache(&mut self) {
+    pub fn update_cache(&mut self) -> StockrsResult<()> {
         // 설정에서 캐시 지속 시간 읽기
-        self.cache_duration = if let Ok(config) = config::get_config() {
-            std::time::Duration::from_secs(config.time_management.event_check_interval / 2) // 이벤트 체크 간격의 절반
-        } else {
-            std::time::Duration::from_secs(1) // 기본값 1초
-        };
+        let config = config::get_config()?;
+        self.cache_duration = std::time::Duration::from_secs(config.time_management.event_check_interval / 2); // 이벤트 체크 간격의 절반
         
         self.cached_time = Some(self.current);
         self.cache_timestamp = Some(std::time::Instant::now());
+        Ok(())
     }
 
     /// 캐시를 무효화합니다.
@@ -253,15 +363,15 @@ impl TimeService {
 
     /// 내부 시간(`current`)을 기준으로 다음 이벤트 시각과 시그널을 계산,
     /// 동시에 내부 시간을 그 다음 이벤트 시각으로 업데이트합니다.
-    pub fn advance(&mut self) -> (DateTime<Local>, TimeSignal) {
-        let (next_time, signal) = self.compute_next_time();
+    pub fn advance(&mut self) -> StockrsResult<(DateTime<Local>, TimeSignal)> {
+        let (next_time, signal) = self.compute_next_time()?;
         self.current = next_time;
         self.current_signal = signal;
         
         // 시간이 변경되었으므로 캐시 업데이트
-        self.update_cache();
+        self.update_cache()?;
         
-        (next_time, signal)
+        Ok((next_time, signal))
     }
 
     /// 주어진 목표 시각(`target`)까지 블로킹 대기를 수행합니다.
@@ -281,63 +391,38 @@ impl TimeService {
     /// 3. Update (설정된 시간 범위) - 1분 단위 업데이트
     /// 4. MarketClose (설정된 시간) - 장 종료
     /// 5. Overnight - 다음 거래일 데이터 준비 시간 대기
-    fn compute_next_time(&self) -> (DateTime<Local>, TimeSignal) {
+    fn compute_next_time(&self) -> StockrsResult<(DateTime<Local>, TimeSignal)> {
         let today = self.current.date_naive();
         
         // 설정에서 시장 시간 정보 읽기
-        let market_hours = if let Ok(config) = config::get_config() {
-            &config.market_hours
-        } else {
-            // 설정을 읽을 수 없는 경우 기본값 사용
-            return self.compute_next_time_fallback(today);
-        };
+        let config = config::get_config()?;
+        let market_hours = &config.market_hours;
 
         // 시간 문자열을 파싱하여 NaiveTime으로 변환
-        let prep_time = self.parse_time_string(&market_hours.data_prep_time, today)
-            .unwrap_or_else(|_| local_time!(today, 8, 30, 0));
-        let open_time = self.parse_time_string(&market_hours.trading_start_time, today)
-            .unwrap_or_else(|_| local_time!(today, 9, 0, 0));
-        let last_upd = self.parse_time_string(&market_hours.last_update_time, today)
-            .unwrap_or_else(|_| local_time!(today, 15, 29, 0));
-        let close_time = self.parse_time_string(&market_hours.market_close_time, today)
-            .unwrap_or_else(|_| local_time!(today, 15, 30, 0));
+        let prep_time = self.parse_time_string(&market_hours.data_prep_time, today)?;
+        let open_time = self.parse_time_string(&market_hours.trading_start_time, today)?;
+        let last_upd = self.parse_time_string(&market_hours.last_update_time, today)?;
+        let close_time = self.parse_time_string(&market_hours.market_close_time, today)?;
 
-        if self.current < prep_time {
+        let result = if self.current < prep_time {
             (prep_time, TimeSignal::DataPrep)
         } else if self.current < open_time {
             (open_time, TimeSignal::MarketOpen)
         } else if self.current < last_upd {
-            (self.add_minute(), TimeSignal::Update)
+            // 현재 시간에서 1분 후로 설정 (Update 신호)
+            (self.current + Duration::minutes(1), TimeSignal::Update)
         } else if self.current < close_time {
             (close_time, TimeSignal::MarketClose)
         } else {
             // self가 &self이므로 임시로 TradingCalender를 생성하여 사용
             let next_date = TradingCalender::default().next_trading_day(today);
             (local_time!(next_date, 8, 30, 0), TimeSignal::Overnight)
-        }
+        };
+        
+        Ok(result)
     }
 
-    /// 설정을 읽을 수 없는 경우 사용하는 기본값 기반 계산
-    fn compute_next_time_fallback(&self, today: NaiveDate) -> (DateTime<Local>, TimeSignal) {
-        let prep_time = local_time!(today, 8, 30, 0);
-        let open_time = local_time!(today, 9, 0, 0);
-        let last_upd = local_time!(today, 15, 29, 0);
-        let close_time = local_time!(today, 15, 30, 0);
 
-        if self.current < prep_time {
-            (prep_time, TimeSignal::DataPrep)
-        } else if self.current < open_time {
-            (open_time, TimeSignal::MarketOpen)
-        } else if self.current < last_upd {
-            (self.add_minute(), TimeSignal::Update)
-        } else if self.current < close_time {
-            (close_time, TimeSignal::MarketClose)
-        } else {
-            // self가 &self이므로 임시로 TradingCalender를 생성하여 사용
-            let next_date = TradingCalender::default().next_trading_day(today);
-            (local_time!(next_date, 8, 30, 0), TimeSignal::Overnight)
-        }
-    }
 
     /// HH:MM:SS 형식의 시간 문자열을 파싱하여 NaiveDateTime으로 변환
     fn parse_time_string(&self, time_str: &str, date: NaiveDate) -> StockrsResult<DateTime<Local>> {
@@ -465,19 +550,39 @@ impl TimeService {
 
 /// 생명주기 패턴 추가 - prototype.py와 동일
 impl TimeService {
-    /// time 시작 시 호출 - prototype.py의 self.time.on_start()
+    /// time 시작 시 호출 - 백테스팅 초기화
     pub fn on_start(&mut self) -> StockrsResult<()> {
+        // 백테스팅 시작 시 첫 번째 이벤트(08:30 DataPrep)로 설정
+        let config = config::get_config()?;
+        let market_hours = &config.market_hours;
+        
+        let today = self.current.date_naive();
+        let prep_time = self.parse_time_string(&market_hours.data_prep_time, today)?;
+        
+        // 현재 시간을 08:30으로 설정하고 DataPrep 신호로 시작
+        self.current = prep_time;
+        self.current_signal = TimeSignal::DataPrep;
+        
+        // 시간이 변경되었으므로 캐시 업데이트
+        self.update_cache()?;
+        
+        println!(
+            "🕐 [Time] 백테스팅 시작 - 초기 시간: {}, 신호: {:?}",
+            self.current.format("%Y-%m-%d %H:%M:%S"),
+            self.current_signal
+        );
+        
         Ok(())
     }
 
     /// time 업데이트 - prototype.py의 self.time.update()
     pub fn update(&mut self) -> StockrsResult<()> {
-        let (next_time, signal) = self.compute_next_time();
+        let (next_time, signal) = self.compute_next_time()?;
         self.current = next_time;
         self.current_signal = signal;
         
         // 시간이 변경되었으므로 캐시 업데이트
-        self.update_cache();
+        self.update_cache()?;
         
         Ok(())
     }
@@ -493,11 +598,8 @@ impl TimeService {
         let next_date = self.next_trading_day(current_date);
 
         // 설정에서 거래 시작 시간 읽기
-        let trading_start_time = if let Ok(config) = config::get_config() {
-            &config.market_hours.trading_start_time
-        } else {
-            "09:00:00" // 기본값
-        };
+        let config = config::get_config()?;
+        let trading_start_time = &config.market_hours.trading_start_time;
 
         // 다음 거래일의 거래 시작 시간으로 설정
         let next_datetime = self.parse_time_string(trading_start_time, next_date)?;
@@ -506,8 +608,132 @@ impl TimeService {
         self.current_signal = TimeSignal::MarketOpen;
         
         // 시간이 변경되었으므로 캐시 업데이트
-        self.update_cache();
+        self.update_cache()?;
 
         Ok(())
+    }
+
+    /// 모드별 대기 로직 - 다음 이벤트까지 대기
+    pub fn wait_until_next_event(&mut self, trading_mode: TradingMode) -> StockrsResult<()> {
+        match trading_mode {
+            TradingMode::Backtest => {
+                // 백테스팅: 현재 시간을 다음 이벤트로 업데이트
+                self.update()?;
+                
+                println!(
+                    "⏰ [Time] 백테스팅 다음 이벤트 - 시간: {}, 신호: {:?}",
+                    self.current.format("%Y-%m-%d %H:%M:%S"),
+                    self.current_signal
+                );
+                
+                Ok(())
+            }
+            TradingMode::Real | TradingMode::Paper => {
+                // 실거래/모의투자: 실제 대기
+                self.wait_until(self.now());
+                println!(
+                    "⏰ [Time] 현재 이벤트: {:?}, 시각: {}",
+                    self.current_signal,
+                    self.now().format("%Y-%m-%d %H:%M:%S")
+                );
+                Ok(())
+            }
+        }
+    }
+
+    /// 모드별 대기 로직 - 다음 거래일로 이동해야 하는 상황 처리
+    pub fn handle_next_trading_day(&mut self, trading_mode: TradingMode) -> StockrsResult<()> {
+        // 다음 거래일로 이동해야 하는지 확인
+        if self.should_skip_to_next_trading_day() {
+            match trading_mode {
+                TradingMode::Backtest => {
+                    // 백테스팅: 즉시 진행
+                    self.skip_to_next_trading_day()
+                }
+                TradingMode::Real | TradingMode::Paper => {
+                    // 실거래/모의투자: 실제 대기
+                    self.wait_until(self.now());
+                    Ok(())
+                }
+            }
+        } else {
+            Ok(())
+        }
+    }
+
+    /// 모드별 대기 로직 - Overnight 신호 처리
+    pub fn handle_overnight_signal(&mut self, trading_mode: TradingMode) -> StockrsResult<()> {
+        if self.current_signal == TimeSignal::Overnight {
+            match trading_mode {
+                TradingMode::Backtest => {
+                    // 백테스팅: 즉시 진행 (다음 거래일로 이동)
+                    self.skip_to_next_trading_day()
+                }
+                TradingMode::Real | TradingMode::Paper => {
+                    // 실거래/모의투자: 실제 대기
+                    self.wait_until(self.now());
+                    Ok(())
+                }
+            }
+        } else {
+            Ok(())
+        }
+    }
+
+    /// 장 중간 진입 처리 - 모의투자/실거래에서 장 중간에 시작할 때
+    pub fn handle_mid_session_entry(&mut self, trading_mode: TradingMode) -> StockrsResult<()> {
+        match trading_mode {
+            TradingMode::Backtest => {
+                // 백테스팅에서는 장 중간 진입이 의미없음 (항상 08:30부터 시작)
+                Ok(())
+            }
+            TradingMode::Real | TradingMode::Paper => {
+                let current_time = self.now();
+                let current_hour = current_time.hour();
+                let current_minute = current_time.minute();
+                
+                // 현재 시간이 거래 시간(09:00~15:30) 내인지 확인
+                let is_trading_hours = (current_hour == 9) || 
+                                      (current_hour > 9 && current_hour < 15) ||
+                                      (current_hour == 15 && current_minute <= 30);
+                
+                if is_trading_hours {
+                    // 거래 시간 내: 현재 시간에 맞는 TimeSignal로 설정
+                    let config = config::get_config()?;
+                    let market_hours = &config.market_hours;
+                    
+                    let today = current_time.date_naive();
+                    let open_time = self.parse_time_string(&market_hours.trading_start_time, today)?;
+                    let last_upd = self.parse_time_string(&market_hours.last_update_time, today)?;
+                    let close_time = self.parse_time_string(&market_hours.market_close_time, today)?;
+                    
+                    // 현재 시간에 맞는 신호 설정
+                    if current_time < open_time {
+                        self.current_signal = TimeSignal::DataPrep;
+                    } else if current_time < last_upd {
+                        self.current_signal = TimeSignal::Update;
+                    } else if current_time < close_time {
+                        self.current_signal = TimeSignal::MarketClose;
+                    } else {
+                        self.current_signal = TimeSignal::Overnight;
+                    }
+                    
+                    println!(
+                        "🕐 [Time] 장 중간 진입 - 현재 시간: {}, 신호: {:?}",
+                        current_time.format("%H:%M:%S"),
+                        self.current_signal
+                    );
+                } else {
+                    // 거래 시간 외: 다음 거래일까지 대기
+                    self.current_signal = TimeSignal::Overnight;
+                    println!(
+                        "🌙 [Time] 거래 시간 외 진입 - 다음 거래일까지 대기 (현재: {})",
+                        current_time.format("%H:%M:%S")
+                    );
+                }
+                
+                Ok(())
+            }
+        }
     }
 }

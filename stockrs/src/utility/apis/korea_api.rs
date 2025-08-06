@@ -3,9 +3,12 @@ use crate::utility::types::api::StockApi;
 use crate::utility::types::broker::Order;
 use crate::utility::types::trading::AssetInfo;
 use crate::utility::config;
+use crate::utility::token_manager::{TokenManager, ApiToken};
 
 use std::any::Any;
 use std::rc::Rc;
+use chrono::Utc;
+use tracing::{info, warn};
 
 #[derive(Debug, Clone, Copy)]
 pub enum ApiMode {
@@ -18,6 +21,7 @@ pub enum ApiMode {
 pub struct KoreaApi {
     mode: ApiMode,
     api: Rc<korea_investment_api::KoreaInvestmentApi>,
+    token_manager: TokenManager,
 }
 
 impl KoreaApi {
@@ -38,6 +42,24 @@ impl KoreaApi {
 
     async fn new(mode: ApiMode) -> StockrsResult<Self> {
         let config = config::get_config()?;
+        let token_manager = TokenManager::new()?;
+
+        // 저장된 토큰 확인
+        let api_type = match mode {
+            ApiMode::Real => crate::utility::types::api::ApiType::Real,
+            ApiMode::Paper => crate::utility::types::api::ApiType::Paper,
+            ApiMode::Info => crate::utility::types::api::ApiType::Real, // Info는 Real과 동일한 토큰 사용
+        };
+        
+        let saved_token = token_manager.get_token(api_type)?;
+        
+        let (token, approval_key) = if let Some(api_token) = saved_token {
+            info!("저장된 토큰을 사용합니다: {:?}", mode);
+            (Some(api_token.access_token), api_token.approval_key)
+        } else {
+            info!("새 토큰을 발급받습니다: {:?}", mode);
+            (None, None)
+        };
 
         let account = korea_investment_api::types::Account {
             cano: match mode {
@@ -79,12 +101,44 @@ impl KoreaApi {
             },
             account,
             "HTS_ID",
-            None,
-            None,
+            token,
+            approval_key,
         )
         .await?;
 
-        println!(
+        // 새로 발급받은 토큰 저장
+        if let (Some(token), Some(approval_key)) = (api.auth.get_token(), api.auth.get_approval_key()) {
+            // OAuth 응답에서 토큰 정보 추출
+            if let Some(token_response) = api.auth.get_token_response() {
+                let api_token = ApiToken {
+                    access_token: token,
+                    token_type: token_response.get_token_type(),
+                    expires_in: token_response.get_expires_in(),
+                    access_token_token_expired: token_response.get_access_token_token_expired(),
+                    issued_at: api.auth.get_token_issued_at().unwrap_or_else(|| Utc::now()),
+                    approval_key: Some(approval_key),
+                };
+                
+                token_manager.update_token(api_type, api_token)?;
+                info!("토큰이 저장되었습니다: {:?}", mode);
+            } else {
+                // 토큰 응답 정보가 없는 경우 기본값 사용
+                warn!("토큰 응답 정보가 없어 기본값을 사용합니다: {:?}", mode);
+                let api_token = ApiToken {
+                    access_token: token,
+                    token_type: "Bearer".to_string(),
+                    expires_in: 86400, // 24시간
+                    access_token_token_expired: "2024-12-31 23:59:59".to_string(),
+                    issued_at: Utc::now(),
+                    approval_key: Some(approval_key),
+                };
+                
+                token_manager.update_token(api_type, api_token)?;
+                info!("토큰이 저장되었습니다 (기본값 사용): {:?}", mode);
+            }
+        }
+
+        info!(
             "🔗 [KoreaApi] {} API 연결 완료",
             match mode {
                 ApiMode::Real => "실거래",
@@ -96,6 +150,7 @@ impl KoreaApi {
         Ok(Self {
             mode,
             api: Rc::new(api),
+            token_manager,
         })
     }
 
@@ -319,34 +374,57 @@ impl StockApi for KoreaApi {
         let rt = tokio::runtime::Runtime::new()?;
         let api = Rc::clone(&self.api);
 
-        rt.block_on(async {
-            let result = api
-                .quote
-                .daily_price(
-                    korea_investment_api::types::MarketCode::Stock,
-                    stockcode,
-                    korea_investment_api::types::PeriodCode::ThirtyDays,
-                    false,
-                )
-                .await?;
+        Ok(rt.block_on(async {
+            // 종목코드에서 'A' 제거
+            let clean_stockcode = if stockcode.starts_with('A') {
+                &stockcode[1..]
+            } else {
+                stockcode
+            };
+            
+            // 재시도 로직 (최대 3회)
+            let mut retry_count = 0;
+            let max_retries = 3;
+            
+            let result = loop {
+                let api_result = api
+                    .quote
+                    .current_price(
+                        korea_investment_api::types::MarketCode::Stock,
+                        clean_stockcode,
+                    )
+                    .await;
+                
+                match api_result {
+                    Ok(result) => break result,
+                    Err(e) => {
+                        let error_msg = e.to_string();
+                        if error_msg.contains("EGW00201") && retry_count < max_retries {
+                            retry_count += 1;
+                            println!(
+                                "⚠️ [KoreaApi:{}] 초당 거래건수 초과 (EGW00201) - 1초 대기 후 재시도 ({}/{})",
+                                self.mode_name(),
+                                retry_count,
+                                max_retries
+                            );
+                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                            continue;
+                        } else {
+                            return Err(StockrsError::api(format!("Korea Investment API 오류: {}", e)));
+                        }
+                    }
+                }
+            };
 
-            let output = result.output().as_ref().ok_or_else(|| {
-                StockrsError::price_inquiry(
-                    stockcode,
-                    "현재가",
-                    "API 응답에서 가격 데이터를 찾을 수 없음".to_string(),
-                )
-            })?;
+                    let output = result.output().as_ref().ok_or_else(|| {
+            StockrsError::price_inquiry(
+                stockcode,
+                "현재가",
+                "API 응답에서 가격 데이터를 찾을 수 없음".to_string(),
+            )
+        })?;
 
-            let first_day = output.first().ok_or_else(|| {
-                StockrsError::price_inquiry(
-                    stockcode,
-                    "현재가",
-                    "가격 데이터가 비어있음 (거래일이 아니거나 종목 코드 오류)".to_string(),
-                )
-            })?;
-
-            let price_str = first_day.stck_clpr();
+        let price_str = output.stck_prpr();
             let current_price =
                 price_str
                     .parse::<f64>()
@@ -362,7 +440,7 @@ impl StockApi for KoreaApi {
                 current_price
             );
             Ok(current_price)
-        })
+        })?)
     }
 
     fn set_current_time(&self, _time_str: &str) -> StockrsResult<()> {
@@ -391,61 +469,18 @@ impl StockApi for KoreaApi {
 
 impl KoreaApi {
     /// 거래대금 순위 상위 종목 조회 (실전/모의 투자용)
-    pub fn get_top_amount_stocks(&self, limit: usize) -> StockrsResult<Vec<String>> {
-        let rt = tokio::runtime::Runtime::new()?;
-        let api = Rc::clone(&self.api);
+    pub fn get_top_amount_stocks(&self, _limit: usize) -> StockrsResult<Vec<String>> {
+        // TODO: 구현 필요
+        Ok(vec![])
+    }
 
-        rt.block_on(async {
-            // 거래대금순 조회 파라미터 설정
-            let params =
-                korea_investment_api::types::request::stock::quote::VolumeRankParameter::new(
-                    "0000".to_string(),                                   // 전체 종목
-                    korea_investment_api::types::ShareClassCode::Whole,   // 전체 (보통주 + 우선주)
-                    korea_investment_api::types::BelongClassCode::Amount, // 거래금액순
-                    korea_investment_api::types::TargetClassCode {
-                        margin_30: true,
-                        margin_40: true,
-                        margin_50: true,
-                        margin_60: true,
-                        margin_100: true,
-                        credit_30: true,
-                        credit_40: true,
-                        credit_50: true,
-                        credit_60: true,
-                    }, // 모든 대상 포함
-                    korea_investment_api::types::TargetExeceptClassCode {
-                        overheat: false,
-                        administrated: false,
-                        settlement_trading: false,
-                        insufficient_posting: false,
-                        preferred_share: false,
-                        suspended: false,
-                    }, // 예외 없음
-                    None,                                                 // 최소 가격 제한 없음
-                    None,                                                 // 최대 가격 제한 없음
-                    None,                                                 // 거래량 제한 없음
-                );
+    /// 토큰 상태 정보 출력
+    pub fn print_token_status(&self) -> StockrsResult<()> {
+        self.token_manager.print_token_status()
+    }
 
-            let result = api.quote.volume_rank(params).await?;
-
-            let output = result.output().as_ref().ok_or_else(|| {
-                StockrsError::api("거래대금 순위 API 응답에서 데이터를 찾을 수 없음".to_string())
-            })?;
-
-            // 상위 limit개 종목 코드 추출
-            let top_stocks: Vec<String> = output
-                .iter()
-                .take(limit)
-                .map(|item| item.mksc_shrn_iscd().to_string())
-                .collect();
-
-            println!(
-                "💰 [KoreaApi:{}] 거래대금 상위 {}개 종목 조회 완료",
-                self.mode_name(),
-                top_stocks.len()
-            );
-
-            Ok(top_stocks)
-        })
+    /// 토큰 관리자 참조 가져오기
+    pub fn get_token_manager(&self) -> &TokenManager {
+        &self.token_manager
     }
 }

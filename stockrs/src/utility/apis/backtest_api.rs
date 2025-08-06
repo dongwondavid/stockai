@@ -26,14 +26,12 @@ pub struct BacktestApi {
     holdings: Mutex<HashMap<String, Holding>>,
     /// 현재 현금
     cash: Mutex<f64>,
-    /// TimeService 참조 (시간 기반 가격 조회용)
-    time_service: Rc<TimeService>,
     /// DB API 참조 (가격 조회용)
     db_api: Rc<dyn StockApi>,
 }
 
 impl BacktestApi {
-    pub fn new(db_api: Rc<dyn StockApi>, time_service: Rc<TimeService>) -> StockrsResult<Self> {
+    pub fn new(db_api: Rc<dyn StockApi>) -> StockrsResult<Self> {
         debug!("🔄 [BacktestApi::new] BacktestApi 초기화 시작");
 
         // config에서 초기 자본금 로드
@@ -50,14 +48,13 @@ impl BacktestApi {
         Ok(BacktestApi {
             holdings: Mutex::new(HashMap::new()),
             cash: Mutex::new(initial_capital),
-            time_service,
             db_api,
         })
     }
 
     /// TimeService에서 현재 시간을 YYYYMMDDHHMM 형식으로 조회
-    fn get_current_time(&self) -> String {
-        self.time_service.format_ymdhm()
+    fn get_current_time(&self) -> StockrsResult<String> {
+        TimeService::global_format_ymdhm()
     }
 
     /// 백테스팅용 잔고 계산 (현재 시간 기준)
@@ -65,7 +62,7 @@ impl BacktestApi {
         debug!("🔄 [BacktestApi::calculate_balance] 잔고 계산 시작");
 
         // 백테스팅 모드에서는 현재 시간의 가격을 사용
-        let current_time = self.get_current_time();
+        let current_time = self.get_current_time()?;
 
         let holdings = self
             .holdings
@@ -344,9 +341,21 @@ impl StockApi for BacktestApi {
 
     fn get_current_price(&self, stockcode: &str) -> StockrsResult<f64> {
         // 백테스팅 모드에서는 현재 시간의 가격을 사용
-        let current_time = self.get_current_time();
+        let current_time = self.get_current_time()?;
+        
+        // 디버그 로그 추가
+        println!("🔍 [BacktestApi::get_current_price] 현재가 조회: {} (시간: {})", stockcode, current_time);
+        
         if let Some(db_api) = self.db_api.as_any().downcast_ref::<crate::utility::apis::DbApi>() {
-            db_api.get_current_price_at_time(stockcode, &current_time)
+            let result = db_api.get_current_price_at_time(stockcode, &current_time);
+            
+            // 결과 로그 추가
+            match &result {
+                Ok(price) => println!("✅ [BacktestApi::get_current_price] 조회 성공: {} = {:.0}원", stockcode, price),
+                Err(e) => println!("❌ [BacktestApi::get_current_price] 조회 실패: {} - {}", stockcode, e),
+            }
+            
+            result
         } else {
             Err(StockrsError::general(
                 "DbApi를 찾을 수 없습니다".to_string(),

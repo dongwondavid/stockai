@@ -113,7 +113,7 @@ impl ONNXPredictor {
         date: &str,
         db: &Connection,
         daily_db: &Connection,
-    ) -> StockrsResult<String> {
+    ) -> StockrsResult<Option<String>> {
         info!(
             "🔮 [ONNX] {}일 최고 확률 종목 예측 중... (모드: {:?})",
             date, self.trading_mode
@@ -196,10 +196,10 @@ impl ONNXPredictor {
                 "최고 확률 종목: {} ({:.4})",
                 best_stock.stock_code, best_stock.probability
             );
-            Ok(best_stock.stock_code.clone())
+            Ok(Some(best_stock.stock_code.clone()))
         } else {
             info!("🔮 [ONNX] 예측 결과가 없습니다 - 매수하지 않음");
-            Err(StockrsError::prediction("예측 결과가 없습니다".to_string()))
+            Ok(None)
         }
     }
 

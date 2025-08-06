@@ -78,7 +78,7 @@ impl Korea {
                 match self.auth.get_token() {
                     Some(token) => format!("Bearer {}", token),
                     None => {
-                        return Err(Error::AuthInitFailed("token"));
+                        return Err(Error::AuthInitFailed("token".to_string()));
                     }
                 },
             )
@@ -138,7 +138,7 @@ impl Korea {
                 match self.auth.get_token() {
                     Some(token) => token,
                     None => {
-                        return Err(Error::AuthInitFailed("token"));
+                        return Err(Error::AuthInitFailed("token".to_string()));
                     }
                 },
             )
@@ -174,7 +174,7 @@ impl Korea {
         let tr_id = "TTTC0084R";
         let token = match self.auth.get_token() {
             Some(token) => format!("Bearer {}", token),
-            None => return Err(Error::AuthInitFailed("token")),
+            None => return Err(Error::AuthInitFailed("token".to_string())),
         };
         let mut req = self.client.get(format!(
             "{}/uapi/domestic-stock/v1/trading/inquire-psbl-rvsecncl",
@@ -239,7 +239,7 @@ impl Korea {
         };
         let token = match self.auth.get_token() {
             Some(token) => format!("Bearer {}", token),
-            None => return Err(Error::AuthInitFailed("token")),
+            None => return Err(Error::AuthInitFailed("token".to_string())),
         };
         let mut req = self.client.get(format!(
             "{}/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
@@ -294,7 +294,7 @@ impl Korea {
         };
         let token = match self.auth.get_token() {
             Some(token) => format!("Bearer {}", token),
-            None => return Err(Error::AuthInitFailed("token")),
+            None => return Err(Error::AuthInitFailed("token".to_string())),
         };
         let mut req = self.client.get(format!(
             "{}/uapi/domestic-stock/v1/trading/inquire-balance",
@@ -344,7 +344,7 @@ impl Korea {
         };
         let token = match self.auth.get_token() {
             Some(token) => format!("Bearer {}", token),
-            None => return Err(Error::AuthInitFailed("token")),
+            None => return Err(Error::AuthInitFailed("token".to_string())),
         };
         let mut req = self.client.get(format!(
             "{}/uapi/domestic-stock/v1/trading/inquire-psbl-order",

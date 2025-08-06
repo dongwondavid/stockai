@@ -1,6 +1,7 @@
 use getset::Getters;
 use serde::Deserialize;
 
+pub type CurrentPriceResponse = QuoteResponse<output::CurrentPrice, (), ()>;
 pub type DailyPriceResponse = QuoteResponse<Vec<output::DailyPrice>, (), ()>;
 pub type VolumeRankResponse = QuoteResponse<Vec<output::VolumeRank>, (), ()>;
 pub type GroupListResponse = QuoteResponse<Vec<output::GroupList>, (), Vec<output::GroupList>>;
@@ -37,6 +38,182 @@ pub mod output {
     };
     use getset::Getters;
     use serde::Deserialize;
+
+    #[derive(Clone, Debug, Deserialize, Getters)]
+    pub struct CurrentPrice {
+        /// 주식 현재가
+        #[getset(get = "pub")]
+        stck_prpr: String,
+        /// 전일 대비
+        #[getset(get = "pub")]
+        prdy_vrss: String,
+        /// 전일 대비 부호
+        #[getset(get = "pub")]
+        prdy_vrss_sign: VsPriceSign,
+        /// 전일 대비율
+        #[getset(get = "pub")]
+        prdy_ctrt: String,
+        /// 누적 거래 대금
+        #[getset(get = "pub")]
+        acml_tr_pbmn: String,
+        /// 누적 거래량
+        #[getset(get = "pub")]
+        acml_vol: String,
+        /// 전일 대비 거래량 비율
+        #[getset(get = "pub")]
+        prdy_vrss_vol_rate: String,
+        /// 주식 시가
+        #[getset(get = "pub")]
+        stck_oprc: String,
+        /// 주식 최고가
+        #[getset(get = "pub")]
+        stck_hgpr: String,
+        /// 주식 최저가
+        #[getset(get = "pub")]
+        stck_lwpr: String,
+        /// 주식 상한가
+        #[getset(get = "pub")]
+        stck_mxpr: String,
+        /// 주식 하한가
+        #[getset(get = "pub")]
+        stck_llam: String,
+        /// 주식 기준가
+        #[getset(get = "pub")]
+        stck_sdpr: String,
+        /// HTS 외국인 소진율
+        #[getset(get = "pub")]
+        hts_frgn_ehrt: String,
+        /// 외국인 순매수 수량
+        #[getset(get = "pub")]
+        frgn_ntby_qty: String,
+        /// 프로그램매매 순매수 수량
+        #[getset(get = "pub")]
+        pgtr_ntby_qty: String,
+        /// 상장 주수
+        #[getset(get = "pub")]
+        lstn_stcn: String,
+        /// HTS 시가총액
+        #[getset(get = "pub")]
+        hts_avls: String,
+        /// PER
+        #[getset(get = "pub")]
+        per: String,
+        /// PBR
+        #[getset(get = "pub")]
+        pbr: String,
+        /// 결산 월
+        #[getset(get = "pub")]
+        stac_month: String,
+        /// 거래량 회전율
+        #[getset(get = "pub")]
+        vol_tnrt: String,
+        /// EPS
+        #[getset(get = "pub")]
+        eps: String,
+        /// BPS
+        #[getset(get = "pub")]
+        bps: String,
+        /// 250일 최고가
+        #[getset(get = "pub")]
+        d250_hgpr: String,
+        /// 250일 최고가 일자
+        #[getset(get = "pub")]
+        d250_hgpr_date: String,
+        /// 250일 최고가 대비 현재가 비율
+        #[getset(get = "pub")]
+        d250_hgpr_vrss_prpr_rate: String,
+        /// 250일 최저가
+        #[getset(get = "pub")]
+        d250_lwpr: String,
+        /// 250일 최저가 일자
+        #[getset(get = "pub")]
+        d250_lwpr_date: String,
+        /// 250일 최저가 대비 현재가 비율
+        #[getset(get = "pub")]
+        d250_lwpr_vrss_prpr_rate: String,
+        /// 주식 연중 최고가
+        #[getset(get = "pub")]
+        stck_dryy_hgpr: String,
+        /// 연중 최고가 대비 현재가 비율
+        #[getset(get = "pub")]
+        dryy_hgpr_vrss_prpr_rate: String,
+        /// 연중 최고가 일자
+        #[getset(get = "pub")]
+        dryy_hgpr_date: String,
+        /// 주식 연중 최저가
+        #[getset(get = "pub")]
+        stck_dryy_lwpr: String,
+        /// 연중 최저가 대비 현재가 비율
+        #[getset(get = "pub")]
+        dryy_lwpr_vrss_prpr_rate: String,
+        /// 연중 최저가 일자
+        #[getset(get = "pub")]
+        dryy_lwpr_date: String,
+        /// 52주일 최고가
+        #[getset(get = "pub")]
+        w52_hgpr: String,
+        /// 52주일 최고가 대비 현재가 대비
+        #[getset(get = "pub")]
+        w52_hgpr_vrss_prpr_ctrt: String,
+        /// 52주일 최고가 일자
+        #[getset(get = "pub")]
+        w52_hgpr_date: String,
+        /// 52주일 최저가
+        #[getset(get = "pub")]
+        w52_lwpr: String,
+        /// 52주일 최저가 대비 현재가 대비
+        #[getset(get = "pub")]
+        w52_lwpr_vrss_prpr_ctrt: String,
+        /// 52주일 최저가 일자
+        #[getset(get = "pub")]
+        w52_lwpr_date: String,
+        /// 전체 융자 잔고 비율
+        #[getset(get = "pub")]
+        whol_loan_rmnd_rate: String,
+        /// 공매도가능여부
+        #[getset(get = "pub")]
+        ssts_yn: String,
+        /// 주식 단축 종목코드
+        #[getset(get = "pub")]
+        stck_shrn_iscd: String,
+        /// 액면가 통화명
+        #[getset(get = "pub")]
+        fcam_cnnm: String,
+        /// 자본금 통화명
+        #[getset(get = "pub")]
+        cpfn_cnnm: String,
+        /// 접근도 (선택적 필드)
+        #[serde(default)]
+        #[getset(get = "pub")]
+        apprch_rate: Option<String>,
+        /// 외국인 보유 수량
+        #[getset(get = "pub")]
+        frgn_hldn_qty: String,
+        /// VI적용구분코드
+        #[getset(get = "pub")]
+        vi_cls_code: String,
+        /// 시간외단일가VI적용구분코드
+        #[getset(get = "pub")]
+        ovtm_vi_cls_code: String,
+        /// 최종 공매도 체결 수량
+        #[getset(get = "pub")]
+        last_ssts_cntg_qty: String,
+        /// 투자유의여부
+        #[getset(get = "pub")]
+        invt_caful_yn: String,
+        /// 시장경고코드
+        #[getset(get = "pub")]
+        mrkt_warn_cls_code: String,
+        /// 단기과열여부
+        #[getset(get = "pub")]
+        short_over_yn: String,
+        /// 정리매매여부
+        #[getset(get = "pub")]
+        sltr_yn: String,
+        /// 관리종목여부
+        #[getset(get = "pub")]
+        mang_issu_cls_code: String,
+    }
 
     #[derive(Clone, Debug, Deserialize, Getters)]
     pub struct DailyPrice {

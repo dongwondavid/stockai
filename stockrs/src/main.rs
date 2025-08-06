@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use stockrs::{
-    utility::config::get_config,
+    utility::config::{Config, set_global_config},
     utility::errors::{StockrsError, StockrsResult},
     model::JoonwooModel,
     runner::RunnerBuilder,
@@ -9,23 +9,50 @@ use stockrs::{
 use tracing::{error, info};
 use tracing_log::LogTracer;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter, Registry};
+use clap::Parser;
+
+#[derive(Parser)]
+#[command(name = "stockrs")]
+#[command(about = "Stock trading system with AI models")]
+struct Args {
+    /// 설정 파일 경로 (기본값: config.toml)
+    #[arg(short, long, default_value = "config.toml")]
+    config: String,
+    
+    /// 실행 모드 (real/paper/backtest, 기본값: 설정 파일의 default_mode)
+    #[arg(short, long)]
+    mode: Option<String>,
+    
+    /// 거래 DB 경로 (기본값: 설정 파일의 trading_db_path)
+    #[arg(long)]
+    trading_db: Option<String>,
+}
 
 fn main() -> StockrsResult<()> {
+    // 명령행 인수 파싱
+    let args = Args::parse();
+    
     // 로깅 초기화 (콘솔 출력만)
     init_tracing().map_err(|e| StockrsError::general(format!("로그 시스템 초기화 실패: {}", e)))?;
 
     info!("🚀 stockrs 시작!");
+    info!("📁 설정 파일: {}", args.config);
 
-    // 설정 로드
-    let config = get_config()?;
+    // 설정 로드 (명령행에서 지정된 파일 사용)
+    let config = Config::load_from_file(&args.config)?;
+    
+    // 전역 설정으로 설정 (다른 모듈에서 get_config()로 접근할 수 있도록)
+    set_global_config(config.clone())?;
+    
     info!("✅ 설정 로드 완료");
     info!(
         "📅 작동 기간: {} ~ {}",
         config.time_management.start_date, config.time_management.end_date
     );
 
-    // 기본 모드 확인
-    let api_type = match config.trading.default_mode.as_str() {
+    // 실행 모드 결정 (명령행 인수 우선, 없으면 설정 파일 값 사용)
+    let mode = args.mode.as_deref().unwrap_or(&config.trading.default_mode);
+    let api_type = match mode {
         "real" => {
             info!("💰 실전 거래 모드");
             ApiType::Real
@@ -41,13 +68,15 @@ fn main() -> StockrsResult<()> {
         _ => {
             return Err(StockrsError::general(format!(
                 "지원하지 않는 거래 모드: {}",
-                config.trading.default_mode
+                mode
             )));
         }
     };
 
-    // 거래 DB 경로 설정
-    let trading_db_path = PathBuf::from(&config.database.trading_db_path);
+    // 거래 DB 경로 설정 (명령행 인수 우선, 없으면 설정 파일 값 사용)
+    let trading_db_path = PathBuf::from(
+        args.trading_db.as_deref().unwrap_or(&config.database.trading_db_path)
+    );
     info!("💾 거래 DB 경로: {}", trading_db_path.display());
 
     // 모델 생성

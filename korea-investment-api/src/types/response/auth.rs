@@ -3,6 +3,13 @@
 pub mod Body {
     use serde::{Deserialize, Serialize};
 
+    /// API 오류 응답
+    #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+    pub struct ApiError {
+        pub error_code: String,
+        pub error_description: String,
+    }
+
     /// 실시간 (웹소켓) 접속키 발급
     #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
     pub struct ApprovalKeyCreation {
@@ -31,10 +38,23 @@ pub mod Body {
         access_token: String,
         token_type: String,
         expires_in: u32,
+        access_token_token_expired: String,
     }
     impl TokenCreation {
         pub fn get_access_token(&self) -> String {
             self.access_token.clone()
+        }
+        
+        pub fn get_token_type(&self) -> String {
+            self.token_type.clone()
+        }
+        
+        pub fn get_expires_in(&self) -> u32 {
+            self.expires_in
+        }
+        
+        pub fn get_access_token_token_expired(&self) -> String {
+            self.access_token_token_expired.clone()
         }
     }
 

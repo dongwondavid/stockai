@@ -27,6 +27,34 @@ impl Header {
 }
 
 #[derive(Debug, Clone, Getters, CopyGetters, Setters, Serialize)]
+pub struct CurrentPriceParameter {
+    /// FID 조건 시장 분류 코드
+    #[getset(get = "pub", set = "pub")]
+    fid_cond_mrkt_div_code: MarketCode,
+    /// FID 입력 종목코드
+    #[getset(get = "pub", set = "pub")]
+    fid_input_iscd: String,
+}
+impl CurrentPriceParameter {
+    pub fn new(market_code: MarketCode, shortcode: String) -> Self {
+        Self {
+            fid_cond_mrkt_div_code: market_code,
+            fid_input_iscd: shortcode,
+        }
+    }
+
+    pub fn into_iter(&self) -> [(&'static str, String); 2] {
+        [
+            (
+                "FID_COND_MRKT_DIV_CODE",
+                self.fid_cond_mrkt_div_code.to_string(),
+            ),
+            ("FID_INPUT_ISCD", self.fid_input_iscd.clone()),
+        ]
+    }
+}
+
+#[derive(Debug, Clone, Getters, CopyGetters, Setters, Serialize)]
 pub struct DailyPriceParameter {
     /// FID 조건 시장 분류 코드
     #[getset(get = "pub", set = "pub")]

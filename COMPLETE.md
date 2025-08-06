@@ -493,5 +493,6 @@ tracing-log = "0.1"
 - 백테스팅 아키텍처 리팩토링 (BacktestApi 모듈 생성, DbApi 잔고 관리 로직 분리, Broker 연동)
 
 ## 2024-12-19
+- OAuth 토큰 저장 시스템 구현 (config.example.toml에 [token_management] 섹션 추가, TokenManager 모듈 구현, ApiToken 구조체로 OAuth 응답 데이터 관리, KoreaApi 생성자에서 저장된 토큰 우선 사용, 토큰 만료 전 자동 갱신 로직 구현, 토큰 상태 모니터링 및 로깅 시스템 구축, 백업 파일 생성 및 안전한 토큰 관리)
 - stockrs Clippy 경고 해결 및 코드 품질 개선 (unwrap() → expect(), 불필요한 변수 할당 제거, 모든 clippy 경고 해결)
 - 백테스팅 성능 최적화 Phase 1 (DbApi 최적화, Runner 최적화, Model 최적화) 

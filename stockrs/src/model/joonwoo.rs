@@ -107,41 +107,69 @@ impl JoonwooModel {
         Ok((hour, minute))
     }
 
-    /// 오늘 날짜 기준 entry_time에 오프셋을 적용한 (hour, minute) 반환
-    fn get_entry_time_for_today(&self, time: &TimeService) -> Result<(u32, u32), Box<dyn Error>> {
+    /// 전역 TimeService를 사용하는 매수 시간 계산
+    fn get_entry_time_for_today_global(&self) -> Result<(u32, u32), Box<dyn Error>> {
+        let current_time = crate::time::TimeService::global_now()
+            .map_err(|e| format!("전역 TimeService 접근 실패: {}", e))?;
+        let current_date = current_time.date_naive();
+        
+        // 기본 매수 시간 파싱
         let (mut hour, mut minute) = self.parse_time_string(&self.entry_time_str)?;
-        let date = time.now().date_naive();
-        if time.is_special_start_date(date) {
-            let offset = time.special_start_time_offset_minutes;
-            let total_minutes = hour as i32 * 60 + minute as i32 + offset;
-            if total_minutes < 0 || total_minutes >= 24 * 60 {
-                return Err(format!("entry_time 오프셋 적용 결과가 0~24시 범위를 벗어남: {}분", total_minutes).into());
+        
+        // 전역 TimeService에서 특별한 날 체크
+        let global_time_service = crate::time::TimeService::get()
+            .map_err(|e| format!("전역 TimeService 접근 실패: {}", e))?;
+        let time_service_guard = global_time_service.lock()
+            .map_err(|e| format!("TimeService 뮤텍스 락 실패: {}", e))?;
+        
+        if let Some(time_service) = time_service_guard.as_ref() {
+            if time_service.is_special_start_date(current_date) {
+                let offset = time_service.special_start_time_offset_minutes;
+                let total_minutes = hour as i32 * 60 + minute as i32 + offset;
+                if total_minutes < 0 || total_minutes >= 24 * 60 {
+                    return Err(format!("entry_time 오프셋 적용 결과가 0~24시 범위를 벗어남: {}분", total_minutes).into());
+                }
+                hour = (total_minutes / 60) as u32;
+                minute = (total_minutes % 60) as u32;
             }
-            hour = (total_minutes / 60) as u32;
-            minute = (total_minutes % 60) as u32;
         }
-        Ok((hour, minute))
-    }
-    /// 오늘 날짜 기준 force_close_time에 오프셋을 적용한 (hour, minute) 반환
-    fn get_force_close_time_for_today(&self, time: &TimeService) -> Result<(u32, u32), Box<dyn Error>> {
-        let (mut hour, mut minute) = self.parse_time_string(&self.force_close_time_str)?;
-        let date = time.now().date_naive();
-        if time.is_special_start_date(date) {
-            let offset = time.special_start_time_offset_minutes;
-            let total_minutes = hour as i32 * 60 + minute as i32 + offset;
-            if total_minutes < 0 || total_minutes >= 24 * 60 {
-                return Err(format!("force_close_time 오프셋 적용 결과가 0~24시 범위를 벗어남: {}분", total_minutes).into());
-            }
-            hour = (total_minutes / 60) as u32;
-            minute = (total_minutes % 60) as u32;
-        }
+        
         Ok((hour, minute))
     }
 
-    /// 매수 시도 (설정된 시간) - 최적화됨
-    fn try_entry(
+    /// 전역 TimeService를 사용하는 강제 정리 시간 계산
+    fn get_force_close_time_for_today_global(&self) -> Result<(u32, u32), Box<dyn Error>> {
+        let current_time = crate::time::TimeService::global_now()
+            .map_err(|e| format!("전역 TimeService 접근 실패: {}", e))?;
+        let current_date = current_time.date_naive();
+        
+        // 기본 강제 정리 시간 파싱
+        let (mut hour, mut minute) = self.parse_time_string(&self.force_close_time_str)?;
+        
+        // 전역 TimeService에서 특별한 날 체크
+        let global_time_service = crate::time::TimeService::get()
+            .map_err(|e| format!("전역 TimeService 접근 실패: {}", e))?;
+        let time_service_guard = global_time_service.lock()
+            .map_err(|e| format!("TimeService 뮤텍스 락 실패: {}", e))?;
+        
+        if let Some(time_service) = time_service_guard.as_ref() {
+            if time_service.is_special_start_date(current_date) {
+                let offset = time_service.special_start_time_offset_minutes;
+                let total_minutes = hour as i32 * 60 + minute as i32 + offset;
+                if total_minutes < 0 || total_minutes >= 24 * 60 {
+                    return Err(format!("force_close_time 오프셋 적용 결과가 0~24시 범위를 벗어남: {}분", total_minutes).into());
+                }
+                hour = (total_minutes / 60) as u32;
+                minute = (total_minutes % 60) as u32;
+            }
+        }
+        
+        Ok((hour, minute))
+    }
+
+    /// 전역 TimeService를 사용하는 매수 시도
+    fn try_entry_global(
         &mut self,
-        time: &TimeService,
         apis: &ApiBundle,
     ) -> Result<Option<Order>, Box<dyn Error>> {
         if self.state != TradingState::WaitingForEntry {
@@ -149,10 +177,11 @@ impl JoonwooModel {
             return Ok(None);
         }
 
-        let current_time = time.now();
+        let current_time = crate::time::TimeService::global_now()
+            .map_err(|e| format!("전역 TimeService 접근 실패: {}", e))?;
 
         // 설정된 매수 시간 확인
-        let (entry_hour, entry_minute) = self.get_entry_time_for_today(time)?;
+        let (entry_hour, entry_minute) = self.get_entry_time_for_today_global()?;
         if current_time.hour() != entry_hour || current_time.minute() != entry_minute {
             debug!("매수 시간이 아닙니다: {}:{} (설정: {}:{:02})", 
                 current_time.hour(), current_time.minute(), entry_hour, entry_minute);
@@ -177,17 +206,19 @@ impl JoonwooModel {
 
         let today_str = TimeService::format_local_ymd(&current_time);
         let target_stock = match predictor.predict_top_stock(&today_str, &db, &daily_db) {
-            Ok(stock) => stock,
+            Ok(Some(stock)) => stock,
+            Ok(None) => {
+                info!("🔮 [joonwoo] 예측 결과가 없습니다 - 매수하지 않음");
+                return Ok(None);
+            }
             Err(e) => {
                 return Err(e.into());
             }
         };
 
-        // 현재가 조회 (시간 기반) - 최적화됨
-        let current_time_str = TimeService::format_local_ymdhm(&current_time);
-
+        // 현재가 조회 (모드별 자동 선택)
         let current_price = apis
-            .get_current_price_at_time(&target_stock, &current_time_str)
+            .get_current_price(&target_stock)
             .map_err(|e| {
                 println!("❌ [joonwoo] 현재가 조회 실패: {}", e);
                 Box::new(e) as Box<dyn Error>
@@ -215,29 +246,24 @@ impl JoonwooModel {
                 let max_quantity_ratio = (available_amount / current_price) as u32;
                 if max_quantity_ratio > 0 {
                     quantity_to_buy = max_quantity_ratio;
-                    info!("📈 [joonwoo] 비율 매수: {}주 @{:.0}원 (자산비율: {:.1}%) - 고정금액 부족", 
+                    info!("📈 [joonwoo] 비율 매수: {}주 @{:.0}원 (자산 비율: {:.1}%)", 
                         quantity_to_buy, current_price, self.entry_asset_ratio);
-                } else {
-                    debug!("자산비율로도 매수할 수량이 0입니다. 가격: {}, 가용자산: {}", 
-                        current_price, available_balance);
                 }
             }
         } else {
-            // 고정 금액이 설정되지 않은 경우 비율 기반 매수
+            // 비율 기반 매수만
             let available_amount = available_balance * (self.entry_asset_ratio / 100.0);
             let max_quantity_ratio = (available_amount / current_price) as u32;
             if max_quantity_ratio > 0 {
                 quantity_to_buy = max_quantity_ratio;
-                info!("📈 [joonwoo] 비율 매수: {}주 @{:.0}원 (자산비율: {:.1}%)", 
+                info!("📈 [joonwoo] 비율 매수: {}주 @{:.0}원 (자산 비율: {:.1}%)", 
                     quantity_to_buy, current_price, self.entry_asset_ratio);
-            } else {
-                debug!("자산비율로 매수할 수량이 0입니다. 가격: {}, 가용자산: {}", 
-                    current_price, available_balance);
             }
         }
 
         if quantity_to_buy == 0 {
-            debug!("매수 가능 수량이 0입니다. 가격: {}, 가용자산: {}", current_price, balance_info.get_asset());
+            info!("💰 [joonwoo] 매수 가능한 수량이 없습니다 (잔고: {:.0}원, 필요: {:.0}원)", 
+                available_balance, current_price);
             return Ok(None);
         }
 
@@ -248,7 +274,7 @@ impl JoonwooModel {
             side: OrderSide::Buy,
             quantity: quantity_to_buy,
             price: current_price,
-            fee: 0.0,
+            fee: 0.0, // 수수료는 나중에 계산
             strategy: "joonwoo_entry".to_string(),
         };
 
@@ -260,99 +286,115 @@ impl JoonwooModel {
         self.entry_time = Some(current_time.naive_local());
         self.state = TradingState::Holding;
 
-        info!("📈 [joonwoo] 매수 주문 생성: {} {}주 @{:.0}원 (설정된 시간: {})", 
-            target_stock, quantity_to_buy, current_price, self.entry_time_str);
+        info!("🚀 [joonwoo] 매수 주문 생성: {} {}주 @{:.0}원", 
+            target_stock, quantity_to_buy, current_price);
 
         Ok(Some(order))
     }
 
-    /// 매도 조건 체크 - 최적화됨
-    fn check_exit_conditions(
+    /// 전역 TimeService를 사용하는 강제 정리
+    fn force_close_all_global(
         &mut self,
-        time: &TimeService,
         apis: &ApiBundle,
     ) -> Result<Option<Order>, Box<dyn Error>> {
-        if let Some(ref stock_code) = self.current_stock {
-            if self.remaining_size > 0 {
-                // 현재가 조회 (시간 기반) - 최적화됨
-                let current_time = time.now();
-                let current_time_str = current_time.format("%Y%m%d%H%M").to_string();
-
-                let current_price = apis
-                    .get_current_price_at_time(stock_code, &current_time_str)
-                    .map_err(|e| {
-                        println!("❌ [joonwoo] 손익 체크 - 현재가 조회 실패: {}", e);
-                        Box::new(e) as Box<dyn Error>
-                    })?;
-
-                let profit_rate = (current_price - self.entry_price) / self.entry_price * 100.0;
-
-                // 손절 조건 (설정된 비율)
-                if profit_rate <= -self.stop_loss_pct {
-                    println!("📉 [joonwoo] 손절: {:.2}% (설정: -{:.1}%)", profit_rate, self.stop_loss_pct);
-                    return self.create_sell_all_order(time, current_price, "stop_loss");
-                }
-
-                // 익절 조건 (설정된 비율) - 한 번에 모두 매도
-                if profit_rate >= self.take_profit_pct && self.state == TradingState::Holding {
-                    println!("📈 [joonwoo] 익절: {:.2}% (설정: +{:.1}%) (전량)", profit_rate, self.take_profit_pct);
-                    return self.create_sell_all_order(time, current_price, "take_profit_all");
-                }
-            }
+        if self.state != TradingState::Holding {
+            debug!("포지션이 없습니다: {:?}", self.state);
+            return Ok(None);
         }
+
+        let current_time = crate::time::TimeService::global_now()
+            .map_err(|e| format!("전역 TimeService 접근 실패: {}", e))?;
+
+        // 설정된 강제 정리 시간 확인
+        let (force_close_hour, force_close_minute) = self.get_force_close_time_for_today_global()?;
+        if current_time.hour() != force_close_hour || current_time.minute() != force_close_minute {
+            debug!("강제 정리 시간이 아닙니다: {}:{} (설정: {}:{:02})", 
+                current_time.hour(), current_time.minute(), force_close_hour, force_close_minute);
+            return Ok(None);
+        }
+
+        // 현재가 조회
+        let current_price = apis
+            .get_current_price(self.current_stock.as_ref().unwrap())
+            .map_err(|e| {
+                println!("❌ [joonwoo] 현재가 조회 실패: {}", e);
+                Box::new(e) as Box<dyn Error>
+            })?;
+
+        // 강제 정리 주문 생성
+        let order = self.create_sell_all_order_global(current_price, "force_close")?;
+
+        // 상태 업데이트
+        self.state = TradingState::Closed;
+
+        info!("🔚 [joonwoo] 강제 정리 주문 생성: {} {}주 @{:.0}원", 
+            self.current_stock.as_ref().unwrap(), self.remaining_size, current_price);
+
+        Ok(order)
+    }
+
+    /// 전역 TimeService를 사용하는 종료 조건 체크
+    fn check_exit_conditions_global(
+        &mut self,
+        apis: &ApiBundle,
+    ) -> Result<Option<Order>, Box<dyn Error>> {
+        if self.state != TradingState::Holding {
+            return Ok(None);
+        }
+
+        let current_price = apis
+            .get_current_price(self.current_stock.as_ref().unwrap())
+            .map_err(|e| {
+                println!("❌ [joonwoo] 현재가 조회 실패: {}", e);
+                Box::new(e) as Box<dyn Error>
+            })?;
+
+        let price_change_pct = ((current_price - self.entry_price) / self.entry_price) * 100.0;
+
+        // 손절 조건
+        if price_change_pct <= -self.stop_loss_pct {
+            let order = self.create_sell_all_order_global(current_price, "stop_loss")?;
+            self.state = TradingState::Closed;
+            info!("📉 [joonwoo] 손절: {:.1}% 손실 @{:.0}원", price_change_pct, current_price);
+            return Ok(order);
+        }
+
+        // 익절 조건
+        if price_change_pct >= self.take_profit_pct {
+            let order = self.create_sell_all_order_global(current_price, "take_profit")?;
+            self.state = TradingState::Closed;
+            info!("📈 [joonwoo] 익절: {:.1}% 이익 @{:.0}원", price_change_pct, current_price);
+            return Ok(order);
+        }
+
         Ok(None)
     }
 
-    /// 강제 정리 (설정된 시간) - 최적화됨
-    fn force_close_all(
+    /// 전역 TimeService를 사용하는 전량 매도 주문 생성
+    fn create_sell_all_order_global(
         &mut self,
-        time: &TimeService,
-        apis: &ApiBundle,
-    ) -> Result<Option<Order>, Box<dyn Error>> {
-        if let Some(ref stock_code) = self.current_stock {
-            if self.remaining_size > 0 {
-                // 설정된 강제 정리 시간 확인
-                let (force_close_hour, force_close_minute) = self.get_force_close_time_for_today(time)?;
-                let current_time = time.now();
-                
-                if current_time.hour() == force_close_hour && current_time.minute() == force_close_minute {
-                    println!("⏰ [joonwoo] 시간 손절 (설정된 시간: {})", self.force_close_time_str);
-                    let current_time_str = current_time.format("%Y%m%d%H%M").to_string();
-                    let current_price = apis
-                        .get_current_price_at_time(stock_code, &current_time_str)
-                        .map_err(|e| Box::new(e) as Box<dyn Error>)?;
-                    return self.create_sell_all_order(time, current_price, "time_stop");
-                }
-            }
-        }
-        Ok(None)
-    }
-
-    /// 전량 매도 주문 생성
-    fn create_sell_all_order(
-        &mut self,
-        time: &TimeService,
         price: f64,
         reason: &str,
     ) -> Result<Option<Order>, Box<dyn Error>> {
-        if let Some(ref stock_code) = self.current_stock {
-            let order = Order {
-                date: time.now().naive_local(),
-                stockcode: stock_code.clone(),
-                side: OrderSide::Sell,
-                quantity: self.remaining_size,
-                price,
-                fee: 0.0,
-                strategy: format!("joonwoo_{}", reason),
-            };
-
-            self.remaining_size = 0;
-            self.state = TradingState::Closed;
-
-            Ok(Some(order))
-        } else {
-            Ok(None)
+        if self.remaining_size == 0 {
+            return Ok(None);
         }
+
+        let order = Order {
+            date: crate::time::TimeService::global_now()
+                .map_err(|e| format!("전역 TimeService 접근 실패: {}", e))?
+                .naive_local(),
+            stockcode: self.current_stock.as_ref().unwrap().clone(),
+            side: OrderSide::Sell,
+            quantity: self.remaining_size,
+            price,
+            fee: 0.0, // 수수료는 나중에 계산
+            strategy: reason.to_string(),
+        };
+
+        self.remaining_size = 0;
+
+        Ok(Some(order))
     }
 
 
@@ -385,15 +427,16 @@ impl Model for JoonwooModel {
 
     fn on_event(
         &mut self,
-        time: &TimeService,
         apis: &ApiBundle,
     ) -> Result<Option<Order>, Box<dyn Error>> {
-        let current_time = time.now();
+        // 전역 TimeService 인스턴스 사용
+        let current_time = crate::time::TimeService::global_now()
+            .map_err(|e| format!("전역 TimeService 접근 실패: {}", e))?;
         let hour = current_time.hour();
         let minute = current_time.minute();
 
         // 설정된 시간에 따른 로직 분기
-        let (entry_hour, entry_minute) = match self.get_entry_time_for_today(time) {
+        let (entry_hour, entry_minute) = match self.get_entry_time_for_today_global() {
             Ok((h, m)) => (h, m),
             Err(e) => {
                 warn!("매수 시간 파싱 실패: {}", e);
@@ -401,7 +444,7 @@ impl Model for JoonwooModel {
             }
         };
 
-        let (force_close_hour, force_close_minute) = match self.get_force_close_time_for_today(time) {
+        let (force_close_hour, force_close_minute) = match self.get_force_close_time_for_today_global() {
             Ok((h, m)) => (h, m),
             Err(e) => {
                 warn!("강제 정리 시간 파싱 실패: {}", e);
@@ -414,17 +457,17 @@ impl Model for JoonwooModel {
             // 설정된 매수 시간
             (h, m) if h == entry_hour && m == entry_minute => {
                 debug!("⏰ [joonwoo] 매수 타이밍 (설정: {}:{:02})", h, m);
-                self.try_entry(time, apis)
+                self.try_entry_global(apis)
             }
             // 설정된 강제 정리 시간
             (h, m) if h == force_close_hour && m == force_close_minute => {
                 debug!("⏰ [joonwoo] 강제 정리 타이밍 (설정: {}:{:02})", h, m);
-                self.force_close_all(time, apis)
+                self.force_close_all_global(apis)
             }
             // 일반 시간대 조건 체크 (매수 시간 ~ 강제 정리 시간)
             (h, m) if (h > entry_hour || (h == entry_hour && m >= entry_minute)) 
                      && (h < force_close_hour || (h == force_close_hour && m <= force_close_minute)) => {
-                self.check_exit_conditions(time, apis)
+                self.check_exit_conditions_global(apis)
             }
             // 기타 시간대는 아무것도 하지 않음
             _ => {

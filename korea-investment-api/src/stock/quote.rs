@@ -33,6 +33,38 @@ impl Quote {
         })
     }
 
+    /// 주식현재가 시세[v1_국내주식-008]
+    pub async fn current_price(
+        &self,
+        market_code: MarketCode,
+        shortcode: &str,
+    ) -> Result<response::stock::quote::CurrentPriceResponse, Error> {
+        let tr_id = TrId::CurrentPrice;
+        let tr_id_str = Into::<String>::into(tr_id.clone());
+        let param = request::stock::quote::CurrentPriceParameter::new(
+            market_code,
+            shortcode.to_string(),
+        );
+        let url = format!(
+            "{}/uapi/domestic-stock/v1/quotations/inquire-price",
+            self.endpoint_url
+        );
+        let params = param.into_iter();
+        let url = reqwest::Url::parse_with_params(&url, &params)?;
+        
+        // 디버깅: HTTP 요청 정보 출력
+        println!("🔍 [HTTP Request] URL: {}", url);
+        println!("🔍 [HTTP Request] Method: GET");
+        println!("🔍 [HTTP Request] Headers: Content-Type=application/json, Authorization=Bearer ***, appkey=***, appsecret=***, tr_id={}, custtype=P", tr_id_str);
+        
+        Ok(self
+            .create_request(tr_id, url)?
+            .send()
+            .await?
+            .json::<response::stock::quote::CurrentPriceResponse>()
+            .await?)
+    }
+
     /// 주식현재가 일자별[v1_국내주식-010]
     pub async fn daily_price(
         &self,
@@ -42,6 +74,7 @@ impl Quote {
         is_adjust_price: bool,
     ) -> Result<response::stock::quote::DailyPriceResponse, Error> {
         let tr_id = TrId::DailyPrice;
+        let tr_id_str = Into::<String>::into(tr_id.clone());
         let param = request::stock::quote::DailyPriceParameter::new(
             market_code,
             shortcode.to_string(),
@@ -54,6 +87,12 @@ impl Quote {
         );
         let params = param.into_iter();
         let url = reqwest::Url::parse_with_params(&url, &params)?;
+        
+        // 디버깅: HTTP 요청 정보 출력
+        println!("🔍 [HTTP Request] URL: {}", url);
+        println!("🔍 [HTTP Request] Method: GET");
+        println!("🔍 [HTTP Request] Headers: Content-Type=application/json, Authorization=Bearer ***, appkey=***, appsecret=***, tr_id={}, custtype=P", tr_id_str);
+        
         Ok(self
             .create_request(tr_id, url)?
             .send()
@@ -169,7 +208,7 @@ impl Quote {
                 match self.auth.get_token() {
                     Some(token) => format!("Bearer {}", token),
                     None => {
-                        return Err(Error::AuthInitFailed("token"));
+                        return Err(Error::AuthInitFailed("token".to_string()));
                     }
                 },
             )

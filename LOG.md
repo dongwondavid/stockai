@@ -1,5 +1,23 @@
 # 📝 변경 이력 로그
 
+2025-01-27T16:25: stockrs/src/time.rs: 모드별 대기 로직 추가 - TradingMode import 추가, wait_until_next_event, handle_next_trading_day, handle_overnight_signal 메서드 구현, 백테스팅은 즉시 진행하고 실거래/모의투자는 실제 대기하는 로직 구현
+
+2025-01-27T16:25: stockrs/src/runner.rs: 모드별 대기 로직을 time.rs로 이동 - wait_until_next_event 메서드에서 기존 조건부 로직을 time.rs의 새로운 메서드들(handle_next_trading_day, handle_overnight_signal) 사용하도록 리팩토링, 책임 분리 개선
+
+2025-01-27T16:20: stockrs/src/model.rs: 명확한 분류 검증 완료 - runner, time, model, main, utility, broker, joonwoo 모듈에서 TradingMode와 ApiBundle current_mode 사용 현황 분석 완료, 모든 모듈에서 적절한 모드 분류가 구현되어 있음을 확인
+
+2025-01-27T16:15: stockrs/src/model.rs: ApiBundle에 현재 모드 정보 추가 - current_mode 필드와 TradingMode 기반 완벽한 분류 시스템 구현, get_balance() 메서드를 현재 모드에 따라 정확한 API 호출하도록 개선, 편의 메서드들(is_backtest_mode, is_real_mode, is_paper_mode, get_current_api) 추가
+
+2025-01-27T16:10: stockrs/src/model.rs: 모의투자 잔고 조회 API 수정 - ApiBundle::get_balance() 메서드에서 모의투자 모드일 때 db_api 대신 paper_api(KoreaApi 모의투자 API) 사용하도록 수정, 모의투자에서 BacktestApi 호출 오류 해결
+
+2025-01-27T16:05: evalutor/score.py: Drawdown Duration 계산 오류 수정 - calculate_drawdown_duration 함수에 dates 매개변수 추가, drawdowns.index 대신 dates.iloc 사용하여 실제 날짜 객체로 기간 계산, AttributeError: 'int' object has no attribute 'days' 오류 해결
+
+2025-01-27T16:00: evalutor/score.py: Drawdown Duration 지표 추가 - 각 드로우다운 기간의 지속 기간을 계산하고 최대값을 반환하는 calculate_drawdown_duration 함수 구현, 드로우다운 지표 출력 섹션에 Max Drawdown Duration 추가
+
+2025-07-27T19:10: stockrs/src/model/onnx_predictor.rs: 예측 결과가 없을 때 에러 대신 None 반환하도록 수정 - predict_top_stock 함수 반환 타입을 StockrsResult<String>에서 StockrsResult<Option<String>>으로 변경, 예측 결과가 없을 때 Err 대신 Ok(None) 반환하여 에러 제거
+2025-07-27T19:10: stockrs/src/model/joonwoo.rs: 예측 결과가 None일 때 매수하지 않도록 처리 개선 - try_entry 함수에서 predict_top_stock 결과가 None일 때 매수 주문 생성하지 않고 None 반환, 예측 결과가 없을 때도 정상적으로 처리
+2025-07-27T19:10: stockrs/src/db_manager.rs: 거래가 없어도 안전하게 작동하는 overview 로직 개선 - finish_overview에서 COALESCE 사용하여 거래 기록 조회 시 NULL 처리, insert_overview와 update_overview에서 query_row 실패 시 unwrap_or(0) 사용, open 값 조회 실패 시 현재 자산으로 대체, high/low 값 조회 실패 시 현재 자산으로 초기화
+
 2025-07-27T10:15: stockrs/src/model/onnx_predictor/features/day2.rs: calculate_volume_ratio_vs_prevday 함수 매개변수 수정 - db 매개변수 추가하여 5분봉 DB에서 get_morning_data 호출하도록 수정, daily_db 대신 db 사용하여 올바른 데이터베이스에서 당일 오전 거래량 조회
 2025-07-27T10:15: stockrs/src/model/onnx_predictor/features.rs: day2_volume_ratio_vs_prevday 특징 호출 시 db 매개변수 추가 - calculate_volume_ratio_vs_prevday 함수 호출 시 db와 daily_db 모두 전달하도록 수정, 데이터베이스 매개변수 전달 오류 해결
 
@@ -322,3 +340,51 @@
 2024-12-19 15:50:00: stockrs/src/model/onnx_predictor/features/day3.rs - calculate_morning_volume_ratio 함수 구현 완료
 
 2024-12-19 15:55:00: stockrs/src/model/onnx_predictor/features/day4.rs - calculate_pos_vs_high_10d 함수 구현 완료
+
+2025-01-27 15:30:00: evalutor/score.py: README.md 명시 지표 완전 구현 - 소르티노 비율 계산 오류 수정, 회복 기간 계산 추가, 평균 보유 기간 계산 추가, 월별 무위험 이율 적용, 결과 출력 구조화
+
+2025-01-27 15:35:00: evalutor/score.py: ROI 퍼센트 단위 수정 - overview와 trading 테이블의 roi 컬럼을 100으로 나누어 소수점으로 변환
+
+2025-01-27 15:40:00: evalutor/score.py: 평균 보유 기간 계산을 위해 trading 테이블에서 stock_code 컬럼 추가 로드
+
+2025-01-27 15:45:00: evalutor/score.py: 평균 보유 기간 계산 함수에서 stock_code 컬럼명 일치 수정 (stockcode → stock_code)
+
+2025-01-27 15:50:00: evalutor/score.py: 데이터베이스 실제 컬럼명에 맞춰 stockcode로 통일 (SQL 쿼리와 함수 내부 로직 모두 stockcode 사용)
+
+2025-01-27T16:00: evalutor/score.py: Drawdown Duration 지표 추가 - 각 드로우다운 기간의 지속 기간을 계산하고 최대값을 반환하는 calculate_drawdown_duration 함수 구현, 드로우다운 지표 출력 섹션에 Max Drawdown Duration 추가
+
+2025-01-27T16:05: evalutor/score.py: Drawdown Duration 계산 오류 수정 - calculate_drawdown_duration 함수에 dates 매개변수 추가, drawdowns.index 대신 dates.iloc 사용하여 실제 날짜 객체로 기간 계산, AttributeError: 'int' object has no attribute 'days' 오류 해결
+
+2025-01-27T16:10: evalutor/score.py: 평균 보유 기간 계산 로직 수정 - 순서대로 매수-매도 쌍을 매칭하도록 개선, 기존 로직은 첫 번째 매수에 가장 가까운 매도를 찾아서 잘못된 기간 계산, 수정 후 0.0일로 정확한 결과 도출
+
+2025-01-27T16:15: evalutor/score.py: trading 테이블 time 컬럼 고려한 평균 보유 기간 계산 개선 - date와 time을 합쳐서 datetime 생성, 시간까지 고려한 정확한 보유 기간 계산, 결과 0.0123일(약 17.7분)로 정확한 시간 차이 반영
+
+2025-01-27T16:20: evalutor/score.py: 평균 보유 기간 출력 형식 개선 - 1일보다 작을 때 시간 단위로 변환, 1시간보다 작을 때 분 단위로 변환하여 직관적인 표시 (17.7 minutes)
+
+2024-12-19 15:30:00: evalutor/score.py: 승률 계산 로직 개선 - 매도 거래만 고려하도록 수정 (구매 거래는 수수료로 인한 손실이 필연적이므로 제외)
+
+2025-07-29 06:31:55: TASK.md: OAuth 토큰 저장 시스템 구현 작업 추가 - config.example.toml 기반 토큰 관리 시스템 설계 및 구현 계획 수립
+
+2025-07-29 06:45:00: config.example.toml: [token_management] 섹션 추가 - OAuth 토큰 관리 설정 (토큰 파일 경로, 자동 갱신, 백업 등) 정의
+
+2025-07-29 06:47:00: stockrs/src/utility/config.rs: TokenManagementConfig 구조체 추가 - 토큰 관리 설정을 위한 새로운 설정 타입 정의
+
+2025-07-29 06:50:00: stockrs/src/utility/token_manager.rs: 토큰 관리자 모듈 생성 - ApiToken, TokenData, TokenManager 구조체 구현 (OAuth 토큰 24시간 유효기간, 6시간 갱신 주기 고려)
+
+2025-07-29 06:52:00: stockrs/src/utility.rs: token_manager 모듈 등록 - 새로운 토큰 관리 모듈을 utility 패키지에 추가
+
+2025-07-29 07:15:00: korea-investment-api/src/types/response/auth.rs: TokenCreation 구조체에 access_token_token_expired 필드 추가 - OAuth 응답의 만료 시간 정보 저장
+
+2025-07-29 07:18:00: korea-investment-api/src/auth.rs: Auth 구조체에 토큰 응답 정보 저장 필드 추가 - token_response, token_issued_at 필드 및 관련 메서드 구현
+
+2025-07-29 07:25:00: stockrs/src/utility/apis/korea_api.rs: KoreaApi 생성자에 토큰 관리자 통합 - 저장된 토큰 우선 사용, 새 토큰 발급 시 자동 저장 로직 구현
+
+2025-07-29 07:30:00: stockrs/Cargo.toml: chrono 의존성에 serde 기능 추가 - DateTime<Utc> 직렬화/역직렬화 지원
+
+2025-07-29 07:35:00: stockrs/src/utility/token_manager.rs: 컴파일 오류 수정 - update_token 메서드 로직 개선 및 타입 안전성 강화
+
+2024-12-19 15:30:00: TASK.md: OAuth 토큰 저장 시스템 구현 완료 상태 업데이트 (체크박스 [x]로 변경, 완료 조건 및 관련 모듈에 ✅ 표시 추가, 완료 상태 섹션 추가)
+2024-12-19 15:35:00: COMPLETE.md: OAuth 토큰 저장 시스템 구현 완료 항목 추가 (2024-12-19 섹션에 상세 내용 포함)
+2024-12-19 15:35:00: TASK.md: 완료된 OAuth 토큰 저장 시스템 제거 (COMPLETE.md로 이동 완료)
+2024-12-19 15:40:00: TASK.md: 완료된 작업 내용 삭제 및 새로운 작업 대기 상태로 초기화
+2024-12-19 15:40:00: TODO.md: 토큰 저장 시스템 완료 체크 및 다음 우선순위 작업들 추가 (모의투자/실전투자/예측모델/시스템인프라/성능최적화 카테고리별 정리)
