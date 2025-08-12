@@ -3,7 +3,7 @@ use crate::utility::errors::{StockrsError, StockrsResult};
 use crate::utility::config;
 use crate::local_time;
 use crate::utility::types::trading::TradingMode;
-use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Timelike};
+use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Timelike, Datelike};
 use std::thread;
 use std::collections::HashSet;
 use std::fs;
@@ -567,7 +567,7 @@ impl TimeService {
         self.update_cache()?;
         
         println!(
-            "🕐 [Time] 백테스팅 시작 - 초기 시간: {}, 신호: {:?}",
+            "🕐 [Time] 시작 초기화 - 초기 시간: {}, 신호: {:?}",
             self.current.format("%Y-%m-%d %H:%M:%S"),
             self.current_signal
         );
@@ -629,12 +629,61 @@ impl TimeService {
                 Ok(())
             }
             TradingMode::Real | TradingMode::Paper => {
-                // 실거래/모의투자: 실제 대기
-                self.wait_until(self.now());
+                // 실거래/모의투자: 현 시각 기준으로 다음 이벤트 시각을 계산하고 해당 시각까지 대기
+                let now = Local::now();
+
+                // 오늘의 경계 시각 계산
+                let config = config::get_config()?;
+                let market_hours = &config.market_hours;
+                let today = now.date_naive();
+                let prep_time = self.parse_time_string(&market_hours.data_prep_time, today)?;
+                let open_time = self.parse_time_string(&market_hours.trading_start_time, today)?;
+                let last_upd = self.parse_time_string(&market_hours.last_update_time, today)?;
+                let close_time = self.parse_time_string(&market_hours.market_close_time, today)?;
+
+                // 다음 이벤트 목표 시각과 신호 결정
+                let (target, signal) = if now < prep_time {
+                    (prep_time, TimeSignal::DataPrep)
+                } else if now < open_time {
+                    (open_time, TimeSignal::MarketOpen)
+                } else if now < last_upd {
+                    // 분 정렬: 다음 분의 00초로 정렬하되, last_upd를 넘지 않도록 제한
+                    let next_minute_base = now + Duration::minutes(1);
+                    let rounded = Local
+                        .with_ymd_and_hms(
+                            next_minute_base.year(),
+                            next_minute_base.month(),
+                            next_minute_base.day(),
+                            next_minute_base.hour(),
+                            next_minute_base.minute(),
+                            0,
+                        )
+                        .single()
+                        .ok_or_else(|| {
+                            StockrsError::Time {
+                                operation: "분 정렬".to_string(),
+                                reason: "로컬 시간 변환 실패".to_string(),
+                            }
+                        })?;
+                    (std::cmp::min(rounded, last_upd), TimeSignal::Update)
+                } else if now < close_time {
+                    (close_time, TimeSignal::MarketClose)
+                } else {
+                    // 다음 거래일 08:30 (DataPrep)까지 대기
+                    let next_date = TradingCalender::default().next_trading_day(today);
+                    (local_time!(next_date, 8, 30, 0), TimeSignal::Overnight)
+                };
+
+                // 내부 상태 업데이트 및 대기
+                self.current = target;
+                self.current_signal = signal;
+                self.update_cache()?;
+
+                self.wait_until(target);
                 println!(
-                    "⏰ [Time] 현재 이벤트: {:?}, 시각: {}",
+                    "⏰ [Time][실시간] 다음 이벤트: {:?}, 타겟 시각: {}",
                     self.current_signal,
-                    self.now().format("%Y-%m-%d %H:%M:%S")
+                    target.format("%Y-%m-%d %H:%M:%S")
                 );
                 Ok(())
             }
@@ -688,50 +737,40 @@ impl TimeService {
                 Ok(())
             }
             TradingMode::Real | TradingMode::Paper => {
-                let current_time = self.now();
-                let current_hour = current_time.hour();
-                let current_minute = current_time.minute();
-                
-                // 현재 시간이 거래 시간(09:00~15:30) 내인지 확인
-                let is_trading_hours = (current_hour == 9) || 
-                                      (current_hour > 9 && current_hour < 15) ||
-                                      (current_hour == 15 && current_minute <= 30);
-                
-                if is_trading_hours {
-                    // 거래 시간 내: 현재 시간에 맞는 TimeSignal로 설정
-                    let config = config::get_config()?;
-                    let market_hours = &config.market_hours;
-                    
-                    let today = current_time.date_naive();
-                    let open_time = self.parse_time_string(&market_hours.trading_start_time, today)?;
-                    let last_upd = self.parse_time_string(&market_hours.last_update_time, today)?;
-                    let close_time = self.parse_time_string(&market_hours.market_close_time, today)?;
-                    
-                    // 현재 시간에 맞는 신호 설정
-                    if current_time < open_time {
-                        self.current_signal = TimeSignal::DataPrep;
-                    } else if current_time < last_upd {
-                        self.current_signal = TimeSignal::Update;
-                    } else if current_time < close_time {
-                        self.current_signal = TimeSignal::MarketClose;
-                    } else {
-                        self.current_signal = TimeSignal::Overnight;
-                    }
-                    
-                    println!(
-                        "🕐 [Time] 장 중간 진입 - 현재 시간: {}, 신호: {:?}",
-                        current_time.format("%H:%M:%S"),
-                        self.current_signal
-                    );
-                } else {
-                    // 거래 시간 외: 다음 거래일까지 대기
+                // 장 중간 진입 시점은 실제 현재 시각 기준으로 판정
+                let current_time = Local::now();
+                let config = config::get_config()?;
+                let market_hours = &config.market_hours;
+
+                let today = current_time.date_naive();
+                let prep_time = self.parse_time_string(&market_hours.data_prep_time, today)?;
+                let open_time = self.parse_time_string(&market_hours.trading_start_time, today)?;
+                let last_upd = self.parse_time_string(&market_hours.last_update_time, today)?;
+                let close_time = self.parse_time_string(&market_hours.market_close_time, today)?;
+
+                // 현재 시간에 맞는 신호 설정 (데이터 준비 시간 포함)
+                if current_time < prep_time {
                     self.current_signal = TimeSignal::Overnight;
-                    println!(
-                        "🌙 [Time] 거래 시간 외 진입 - 다음 거래일까지 대기 (현재: {})",
-                        current_time.format("%H:%M:%S")
-                    );
+                } else if current_time < open_time {
+                    self.current_signal = TimeSignal::DataPrep;
+                } else if current_time < last_upd {
+                    self.current_signal = TimeSignal::Update;
+                } else if current_time < close_time {
+                    self.current_signal = TimeSignal::MarketClose;
+                } else {
+                    self.current_signal = TimeSignal::Overnight;
                 }
-                
+
+                // 내부 현재 시각도 실제 현재 시각으로 맞춰 캐시 업데이트
+                self.current = current_time;
+                self.update_cache()?;
+
+                println!(
+                    "🟢 [Time][실시간] 장 중간 진입 - 현재 시각: {}, 신호: {:?}",
+                    current_time.format("%H:%M:%S"),
+                    self.current_signal
+                );
+
                 Ok(())
             }
         }

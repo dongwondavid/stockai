@@ -4,13 +4,22 @@ use crate::utility::types::api::SharedApi;
 use crate::utility::types::broker::{Broker, Order};
 use crate::utility::types::trading::TradingMode;
 use std::error::Error;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
+use std::cell::RefCell;
+use std::collections::VecDeque;
 
 /// 통합된 Broker 구현체
 /// prototype.py의 broker(broker_api) 패턴과 동일
 pub struct StockBroker {
     api: SharedApi,
     trading_mode: TradingMode,
+    pending_orders: RefCell<VecDeque<PendingOrder>>,
+}
+
+struct PendingOrder {
+    order_id: String,
+    order: Order,
+    pre_sell_avg: Option<f64>,
 }
 
 impl StockBroker {
@@ -33,7 +42,7 @@ impl StockBroker {
             trading_mode
         );
 
-        Self { api, trading_mode }
+        Self { api, trading_mode, pending_orders: RefCell::new(VecDeque::new()) }
     }
 }
 
@@ -165,7 +174,7 @@ impl Broker for StockBroker {
         // API를 통한 주문 실행
         let order_id = match self.api.execute_order(order) {
             Ok(id) => {
-                info!("✅ [StockBroker::execute] 주문 실행 성공 - 주문ID: {}", id);
+                println!("📝 [Broker] 주문 전송 완료 - 주문ID: {}", id);
                 id
             }
             Err(e) => {
@@ -174,50 +183,45 @@ impl Broker for StockBroker {
             }
         };
 
-        // 체결 확인
-        let filled = match self.api.check_fill(&order_id) {
-            Ok(filled) => filled,
-            Err(e) => {
-                error!("❌ [StockBroker::execute] 체결 확인 실패: {}", e);
-                return Err(e.into());
-            }
-        };
-
-        if filled {
-            // 거래 결과를 DB에 저장
-            let trading = order.to_trading();
-
-            // 평균가 계산
-            let final_avg_price = if order.get_buy_or_sell() {
-                // 매수 주문: 현재 평균가 조회
-                self.api.get_avg_price(order.get_stockcode()).unwrap_or(0.0)
-            } else {
-                // 매도 주문: 미리 조회한 평균가 사용
-                avg_price
-            };
-
-            match db.save_trading(trading, final_avg_price) {
-                Ok(_) => {
-                    info!("✅ [StockBroker::execute] 거래 DB 저장 완료");
-                }
+        // 모드별 처리: 백테스트는 즉시 저장, 실전/모의는 보류 큐에 추가 후 지연 저장
+        if self.trading_mode == TradingMode::Backtest {
+            // 기존 로직 그대로 유지 (즉시 체결 가정)
+            let filled = match self.api.check_fill(&order_id) {
+                Ok(filled) => filled,
                 Err(e) => {
-                    error!("❌ [StockBroker::execute] 거래 DB 저장 실패: {}", e);
+                    error!("❌ [StockBroker::execute] 체결 확인 실패: {}", e);
                     return Err(e.into());
                 }
+            };
+
+            if filled {
+                let trading = order.to_trading();
+                let final_avg_price = if order.get_buy_or_sell() {
+                    self.api.get_avg_price(order.get_stockcode()).unwrap_or(0.0)
+                } else {
+                    avg_price
+                };
+                match db.save_trading(trading, final_avg_price) {
+                    Ok(_) => println!("🗂️ [Broker] 거래 저장 (백테스트): 평균가 {:.2}", final_avg_price),
+                    Err(e) => {
+                        error!("❌ [StockBroker::execute] 거래 DB 저장 실패: {}", e);
+                        return Err(e.into());
+                    }
+                }
+            } else {
+                println!("⏳ [Broker] 백테스트 미체결 - 주문ID: {}", order_id);
             }
         } else {
-            // 미체결 시 주문 취소
-            warn!(
-                "⚠️ [StockBroker::execute] 미체결 주문 취소 - 주문ID: {}",
-                order_id
-            );
-            if let Err(e) = self.api.cancel_order(&order_id) {
-                error!("❌ [StockBroker::execute] 주문 취소 실패: {}", e);
-                return Err(e.into());
-            }
+            // 실전/모의: 주식일별주문체결조회로 전량 체결 확인 후 저장
+            self.pending_orders.borrow_mut().push_back(PendingOrder {
+                order_id,
+                order: order.clone(),
+                pre_sell_avg: if order.get_buy_or_sell() { None } else { Some(avg_price) },
+            });
+            println!("⏳ [Broker] 보류 큐에 추가 (실시간): {}", order.get_stockcode());
         }
 
-        info!("✅ [StockBroker::execute] 주문 실행 완료");
+        println!("✅ [Broker] 주문 처리 종료");
         Ok(())
     }
 }
@@ -325,6 +329,81 @@ impl StockBroker {
         // 실제 거래 모드에서는 미체결 주문 취소 등의 로직이 필요할 수 있음
 
         info!("✅ [StockBroker::reset_for_new_day] 브로커 리셋 완료");
+        Ok(())
+    }
+
+    /// 보류 주문 처리: 전량 체결 확인 후 저장
+    pub fn process_pending(&self, db: &DBManager) -> Result<(), Box<dyn Error>> {
+        let mut deque = self.pending_orders.borrow_mut();
+        let mut remaining: VecDeque<PendingOrder> = VecDeque::new();
+
+        let initial_len = deque.len();
+        if initial_len == 0 {
+            // 보류 주문이 없으면 조용히 반환
+            return Ok(());
+        }
+
+        print!(" [Broker] 보류 주문 처리 시작 ({}개)", initial_len);
+
+        while let Some(item) = deque.pop_front() {
+            let api = self.api.as_any();
+            if let Some(kapi) = api.downcast_ref::<crate::utility::apis::KoreaApi>() {
+                match kapi.get_order_fill_info(&item.order_id) {
+                    Ok(Some(info)) => {
+                        if info.rmn_qty == 0 {
+                            let trading = item.order.to_trading();
+                            let avg_for_profit = if item.order.get_buy_or_sell() {
+                                // 매수: avg_prvs로 기록
+                                info.avg_prvs
+                            } else {
+                                // 매도: 보유 평균가(사전 조회)로 수익 계산
+                                item.pre_sell_avg.unwrap_or(info.avg_prvs)
+                            };
+                            match db.save_trading(trading, avg_for_profit) {
+                                Ok(_) => info!(
+                                    "📝 [StockBroker::process_pending] 저장 완료 - 주문ID: {} avg:{:.2}",
+                                    item.order_id, avg_for_profit
+                                ),
+                                Err(e) => {
+                                    println!("❌ [StockBroker::process_pending] 저장 실패: {}", e);
+                                    remaining.push_back(item);
+                                }
+                            }
+                        } else {
+                            debug!(
+                                "⏳ [StockBroker::process_pending] 잔여수량: {} - 주문ID: {}",
+                                info.rmn_qty, item.order_id
+                            );
+                            remaining.push_back(item);
+                        }
+                    }
+                    Ok(None) => {
+                        // 아직 API에 체결 기록이 없는 경우 보류 유지
+                        remaining.push_back(item);
+                    }
+                    Err(e) => {
+                        println!("❌ [StockBroker::process_pending] 조회 실패: {}", e);
+                        // 현재 항목을 남김 처리하고, 나머지 큐도 보존한 뒤 오류 반환
+                        remaining.push_back(item);
+                        // 남아있는 항목들을 remaining으로 모두 이동하여 상태 보존
+                        while let Some(rest) = deque.pop_front() {
+                            remaining.push_back(rest);
+                        }
+                        // 큐를 복구
+                        *deque = remaining;
+                        return Err(format!("보류 주문 체결 조회 실패: {}", e).into());
+                    }
+                }
+            } else {
+                // KoreaApi가 아닌 경우 보류 유지
+                remaining.push_back(item);
+            }
+        }
+
+        *deque = remaining;
+
+        println!(" => 완료 ({}개 남음)", deque.len());
+
         Ok(())
     }
 }

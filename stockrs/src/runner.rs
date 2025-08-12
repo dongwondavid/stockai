@@ -152,6 +152,15 @@ impl Runner {
         
         // 장 중간 진입 처리 (모의투자/실거래에서만)
         let trading_mode = Self::api_type_to_trading_mode(self.api_type);
+
+        match trading_mode {
+            TradingMode::Real | TradingMode::Paper => {
+                println!("🟢 [Time] 실시간 모드 시작: 현재 시각 기준으로 초기화 및 장 중간 진입 여부 확인");
+            }
+            TradingMode::Backtest => {
+                println!("🔬 [Time] 백테스트 모드 시작: 08:30부터 시뮬레이션 진행");
+            }
+        }
         TimeService::global_handle_mid_session_entry(trading_mode)?;
         
         self.model.on_start()?;
@@ -171,6 +180,25 @@ impl Runner {
         while !self.stop_condition {
             // prototype.py: wait_until_next_event(self.time)
             self.wait_until_next_event()?;
+
+            // 실전/모의 모드에서는 매 분마다 보류 주문 처리 및 overview 갱신 수행
+            if matches!(self.api_type, ApiType::Real | ApiType::Paper) {
+
+                println!(" [Runner] 주문 처리 및 overview 갱신 중");
+
+                if let Err(e) = self.broker.process_pending(&self.db_manager) {
+                    println!("⚠️ [Runner] 보류 주문 처리 실패: {}", e);
+                }
+
+                if let Err(e) = self
+                    .db_manager
+                    .update_overview(TimeService::global_now()?.date_naive(), None)
+                {
+                    println!("⚠️ [Runner] overview 분당 업데이트 실패: {}", e);
+                }
+
+                println!(" => 완료");
+            }
 
             // prototype.py: result = self.model.on_event(self.time)
             let result = self.model.on_event(&self.api_bundle)?;
@@ -201,6 +229,13 @@ impl Runner {
                                 "DB 매니저 이벤트 처리 실패: {}",
                                 e
                             )));
+                        }
+
+                        // 실전/모의 모드에서 보류 주문 처리
+                        if matches!(self.api_type, ApiType::Real | ApiType::Paper) {
+                            if let Err(e) = self.broker.process_pending(&self.db_manager) {
+                                println!("⚠️ [Runner] 보류 주문 처리 실패: {}", e);
+                            }
                         }
                     }
                     Err(e) => {
@@ -337,6 +372,38 @@ impl Runner {
 
         // TimeService의 통합된 대기 로직 사용
         TimeService::global_wait_until_next_event(trading_mode)?;
+
+        // 실시간 모드에서 end_date 장 종료까지 운영하도록 종료 조건을 추가
+        if matches!(self.api_type, ApiType::Real | ApiType::Paper) {
+            if let Ok(config) = config::get_config() {
+                let end_date_str = &config.time_management.end_date;
+                if end_date_str.len() == 8 {
+                    if let (Ok(year), Ok(month), Ok(day)) = (
+                        end_date_str[0..4].parse::<i32>(),
+                        end_date_str[4..6].parse::<u32>(),
+                        end_date_str[6..8].parse::<u32>(),
+                    ) {
+                        if let Some(end_date) = chrono::NaiveDate::from_ymd_opt(year, month, day) {
+                            let now_dt = TimeService::global_now()?;
+                            let today = now_dt.date_naive();
+                            if today > end_date {
+                                println!("🏁 [Runner] 실시간 모드 종료: end_date({}) 초과", end_date.format("%Y-%m-%d"));
+                                self.stop_condition = true;
+                            } else if today == end_date {
+                                // end_date의 장 종료 시각 파싱
+                                if let Ok(close_naive) = chrono::NaiveTime::parse_from_str(&config.market_hours.market_close_time, "%H:%M:%S") {
+                                    let now_time = now_dt.time();
+                                    if now_time >= close_naive {
+                                        println!("🏁 [Runner] 실시간 모드 종료: end_date 장 종료({}) 도달", end_date.format("%Y-%m-%d"));
+                                        self.stop_condition = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         Ok(())
     }

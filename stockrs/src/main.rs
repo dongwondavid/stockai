@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use stockrs::{
     utility::config::{Config, set_global_config},
     utility::errors::{StockrsError, StockrsResult},
-    model::JoonwooModel,
+    model::{JoonwooModel, DongwonModel},
     runner::RunnerBuilder,
     utility::types::api::ApiType,
 };
@@ -26,6 +26,10 @@ struct Args {
     /// 거래 DB 경로 (기본값: 설정 파일의 trading_db_path)
     #[arg(long)]
     trading_db: Option<String>,
+
+    /// 모델 선택 (joonwoo/dongwon). 기본값: joonwoo
+    #[arg(long, default_value = "joonwoo")]
+    model: String,
 }
 
 fn main() -> StockrsResult<()> {
@@ -80,8 +84,17 @@ fn main() -> StockrsResult<()> {
     info!("💾 거래 DB 경로: {}", trading_db_path.display());
 
     // 모델 생성
-    let model = Box::new(JoonwooModel::new());
-    info!("🧠 joonwoo 모델 생성 완료");
+    let model_name = args.model.to_lowercase();
+    let model: Box<dyn stockrs::model::Model> = match model_name.as_str() {
+        "dongwon" => {
+            info!("🧠 dongwon 모델 생성");
+            Box::new(DongwonModel::new())
+        }
+        "joonwoo" | _ => {
+            info!("🧠 joonwoo 모델 생성");
+            Box::new(JoonwooModel::new())
+        }
+    };
 
     // Runner 생성 및 실행
     let mut runner = RunnerBuilder::new()

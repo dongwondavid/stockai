@@ -23,6 +23,8 @@ pub struct Config {
     pub trading: TradingConfig,
     pub backtest: BacktestConfig,
     pub joonwoo: JoonwooConfig,
+    #[serde(default)]
+    pub dongwon: DongwonConfig,
     pub time_management: TimeManagementConfig,
     pub market_hours: MarketHoursConfig,
     pub logging: LoggingConfig,
@@ -94,6 +96,14 @@ pub struct JoonwooConfig {
     pub force_close_time: String,
     pub entry_asset_ratio: f64,
     pub fixed_entry_amount: f64,  // 고정 매수 금액 (원)
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct DongwonConfig {
+    pub stockcode: String,
+    pub entry_time: String, // HH:MM:SS
+    pub exit_time: String,  // HH:MM:SS
+    pub quantity: u32,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

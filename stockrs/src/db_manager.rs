@@ -48,35 +48,7 @@ impl<T> From<StockrsResult<T>> for DBResult<T> {
     }
 }
 
-/// 백테스팅 모드 감지를 위한 NewType 패턴
-#[derive(Debug, Clone)]
-pub struct BacktestMode {
-    pub is_backtest: bool,
-    pub current_time: Option<String>,
-}
-
-impl BacktestMode {
-    /// 일반 모드 (실전/모의투자)
-    pub fn normal() -> Self {
-        Self {
-            is_backtest: false,
-            current_time: None,
-        }
-    }
-
-    /// 백테스팅 모드
-    pub fn backtest(current_time: String) -> Self {
-        Self {
-            is_backtest: true,
-            current_time: Some(current_time),
-        }
-    }
-
-    /// 현재 시간 문자열 반환
-    pub fn time_str(&self) -> Option<&str> {
-        self.current_time.as_deref()
-    }
-}
+// BacktestMode 제거: 모드 판별은 API 타입을 기반으로 수행
 
 /// API 타입 감지를 위한 NewType 패턴
 pub struct ApiTypeDetector {
@@ -86,6 +58,15 @@ pub struct ApiTypeDetector {
 impl ApiTypeDetector {
     pub fn new(api: SharedApi) -> Self {
         Self { api }
+    }
+
+    /// 현재 DBManager가 사용하는 API가 BacktestApi인지 확인
+    pub fn is_backtest(&self) -> bool {
+        self
+            .api
+            .as_any()
+            .downcast_ref::<crate::utility::apis::BacktestApi>()
+            .is_some()
     }
 
     /// 백테스팅 모드에서 잔고 계산
@@ -175,21 +156,20 @@ impl DBManager {
         Ok(())
     }
 
-    /// 백테스팅 모드에서 잔고 조회
-    fn get_balance_with_mode(
+    /// 모드와 무관하게, 실제 API 타입에 따라 엄격하게 잔고를 조회
+    /// - BacktestApi: 시간이 주어지면 해당 시점 기준, 아니면 현재 백테스트 컨텍스트 기준
+    /// - 그 외 API: 일반 현재 잔고 조회
+    fn get_balance_with_context(
         &self,
-        mode: BacktestMode,
+        current_time: Option<String>,
     ) -> DBResult<crate::utility::types::trading::AssetInfo> {
-        if mode.is_backtest {
-            if let Some(time) = mode.time_str() {
-                // 백테스팅 모드에서 특정 시간의 잔고 계산
+        if self.api_detector.is_backtest() {
+            if let Some(time) = current_time.as_deref() {
                 self.api_detector.calculate_balance_in_backtest(time).into()
             } else {
-                // 백테스팅 모드이지만 시간이 지정되지 않은 경우
                 self.api.get_balance().into()
             }
         } else {
-            // 일반 모드에서 현재 잔고 조회
             self.api.get_balance().into()
         }
     }
@@ -205,16 +185,9 @@ impl DBManager {
             current_date, current_time
         );
 
-        // 백테스팅 모드 감지
-        let mode = if let Some(time) = current_time {
-            BacktestMode::backtest(time)
-        } else {
-            BacktestMode::normal()
-        };
-
         // 잔고 조회
         let balance_result: DBResult<crate::utility::types::trading::AssetInfo> =
-            self.get_balance_with_mode(mode);
+            self.get_balance_with_context(current_time);
         let result = balance_result.into_result().map_err(|e| {
             rusqlite::Error::SqliteFailure(
                 rusqlite::ffi::Error::new(1),
@@ -265,16 +238,9 @@ impl DBManager {
             current_date, current_time
         );
 
-        // 백테스팅 모드 감지
-        let mode = if let Some(time) = current_time {
-            BacktestMode::backtest(time)
-        } else {
-            BacktestMode::normal()
-        };
-
         // 잔고 조회
         let balance_result: DBResult<crate::utility::types::trading::AssetInfo> =
-            self.get_balance_with_mode(mode);
+            self.get_balance_with_context(current_time);
         let result = balance_result.into_result().map_err(|e| {
             rusqlite::Error::SqliteFailure(
                 rusqlite::ffi::Error::new(1),
@@ -361,16 +327,9 @@ impl DBManager {
             current_date, current_time
         );
 
-        // 백테스팅 모드 감지
-        let mode = if let Some(time) = current_time {
-            BacktestMode::backtest(time)
-        } else {
-            BacktestMode::normal()
-        };
-
         // 잔고 조회
         let balance_result: DBResult<crate::utility::types::trading::AssetInfo> =
-            self.get_balance_with_mode(mode);
+            self.get_balance_with_context(current_time);
         let result = balance_result.into_result().map_err(|e| {
             rusqlite::Error::SqliteFailure(
                 rusqlite::ffi::Error::new(1),

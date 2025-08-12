@@ -111,15 +111,20 @@ impl DbApi {
             time_str.to_string()
         };
 
-        // SQL 쿼리 실행
-        let query = "SELECT close FROM \"{}\" WHERE date = ?";
+        // SQL 쿼리 실행 (테이블명 정규화: A 접두사 허용)
+        let table_name = if stockcode.starts_with('A') {
+            stockcode.to_string()
+        } else {
+            format!("A{}", stockcode)
+        };
+        let query = format!("SELECT close FROM \"{}\" WHERE date = ?", table_name);
         let mut stmt = self
             .minute_db_connection
-            .prepare(&query.replace("{}", stockcode))
+            .prepare(&query)
             .map_err(|_e| {
                 StockrsError::general(format!(
                     "SQL 준비 실패: {} (테이블: {})",
-                    query, stockcode
+                    query, table_name
                 ))
             })?;
 

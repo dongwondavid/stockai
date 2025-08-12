@@ -46,15 +46,24 @@ impl Korea {
         qty: Quantity,
         price: Price,
     ) -> Result<response::stock::order::Body::Order, Error> {
-        let request = request::stock::order::Body::Order::new(
-            self.account.cano.clone(),
-            self.account.acnt_prdt_cd.clone(),
-            pdno.to_string(),
-            order_division,
-            qty,
-            price,
-        )
-        .get_json_string();
+        // KIS 요구사항: ORD_QTY/ORD_UNPR는 문자열, ORD_DVSN은 코드 문자열이어야 함
+        let ord_dvsn_code: String = order_division.into();
+        let qty_str: String = qty.into();
+        let unpr_str: String = price.into();
+        // 거래소ID구분코드: 모의투자(KRX), 실전(SOR)
+        let excg_id = match self.environment {
+            Environment::Real => "SOR",
+            Environment::Virtual => "KRX",
+        };
+        let request = serde_json::json!({
+            "CANO": self.account.cano,
+            "ACNT_PRDT_CD": self.account.acnt_prdt_cd,
+            "PDNO": pdno,
+            "ORD_DVSN": ord_dvsn_code,
+            "ORD_QTY": qty_str,
+            "ORD_UNPR": unpr_str,
+            "EXCG_ID_DVSN_CD": excg_id,
+        }).to_string();
         let tr_id: String = match self.environment {
             Environment::Real => match order_direction {
                 Direction::Bid => TrId::RealStockCashBidOrder.into(),
@@ -66,13 +75,13 @@ impl Korea {
             },
         };
         let hash = self.auth.get_hash(request.clone()).await?;
-        Ok(self
+        let resp = self
             .client
             .post(format!(
                 "{}/uapi/domestic-stock/v1/trading/order-cash",
                 self.endpoint_url
             ))
-            .header("Content-Type", "application/json")
+            .header("Content-Type", "application/json; charset=UTF-8")
             .header(
                 "Authorization",
                 match self.auth.get_token() {
@@ -87,11 +96,25 @@ impl Korea {
             .header("tr_id", tr_id)
             .header("hashkey", hash)
             .header("custtype", "P")
-            .body(request)
+            .body(request.clone())
             .send()
-            .await?
-            .json::<response::stock::order::Body::Order>()
-            .await?)
+            .await?;
+
+        let status = resp.status();
+        let text = resp.text().await?;
+        let parsed: response::stock::order::Body::Order = serde_json::from_str(&text)?;
+
+        // 주문 실패 추정 시, 요청/응답 전문 출력 (디버그용)
+        if parsed.output().is_none() {
+            println!("[KIS Order Debug] order-cash request body: {}", request);
+            println!(
+                "[KIS Order Debug] order-cash response (status={}): {}",
+                status.as_u16(),
+                text
+            );
+        }
+
+        Ok(parsed)
     }
 
     // TODO: 주식주문(신용)[v1_국내주식-002]
@@ -307,15 +330,57 @@ impl Korea {
             .header("appsecret", self.auth.get_appsecret())
             .header("tr_id", tr_id)
             .header("custtype", "P");
-        for (k, v) in params.into_iter() {
-            req = req.query(&[(k, v)]);
+
+        // Build query and keep a debug string of the request parameters
+        let query_pairs = params.into_iter();
+        for (k, v) in query_pairs.clone().into_iter() {
+            req = req.query(&[(k, v.clone())]);
         }
-        let resp = req
-            .send()
-            .await?
-            .json::<crate::types::response::stock::balance::BalanceResponse>()
-            .await?;
-        Ok(resp)
+        let debug_query = query_pairs
+            .into_iter()
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect::<Vec<_>>()
+            .join("&");
+
+        // Send request and read raw response text for robust error logging
+        let resp = req.send().await?;
+        let status = resp.status();
+        let text = resp.text().await?;
+
+        // Try to parse JSON response; on parse error, dump debug and return
+        match serde_json::from_str::<crate::types::response::stock::balance::BalanceResponse>(&text)
+        {
+            Ok(parsed) => {
+                // On suspected error state, print request and response bodies for debugging
+                let missing_output2 = parsed
+                    .output2()
+                    .as_ref()
+                    .map(|v| v.is_empty())
+                    .unwrap_or(true);
+                if parsed.rt_cd() != "0" || missing_output2 {
+                    println!(
+                        "[KIS Balance Debug] request: GET {}/uapi/domestic-stock/v1/trading/inquire-balance?{}",
+                        self.endpoint_url, debug_query
+                    );
+                    println!(
+                        "[KIS Balance Debug] response (status={}): {}",
+                        status.as_u16(), text
+                    );
+                }
+                Ok(parsed)
+            }
+            Err(e) => {
+                println!(
+                    "[KIS Balance Debug] request: GET {}/uapi/domestic-stock/v1/trading/inquire-balance?{}",
+                    self.endpoint_url, debug_query
+                );
+                println!(
+                    "[KIS Balance Debug] response (status={}): {}",
+                    status.as_u16(), text
+                );
+                Err(e.into())
+            }
+        }
     }
 
     /// 매수가능조회[v1_국내주식-007]
