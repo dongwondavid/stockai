@@ -6,6 +6,7 @@ use crate::utility::config;
 use crate::utility::token_manager::{TokenManager, ApiToken};
 
 use std::any::Any;
+use std::cell::RefCell;
 use std::rc::Rc;
 use chrono::Utc;
 use tracing::{info, warn};
@@ -22,7 +23,7 @@ pub enum ApiMode {
 /// 한국투자증권 API 구현
 pub struct KoreaApi {
     mode: ApiMode,
-    api: Rc<korea_investment_api::KoreaInvestmentApi>,
+    api: RefCell<Rc<korea_investment_api::KoreaInvestmentApi>>,
     token_manager: TokenManager,
 }
 
@@ -137,6 +138,137 @@ where
 }
 
 impl KoreaApi {
+    /// KIS 오류 메시지에서 토큰 만료 여부를 판단
+    fn is_token_expired_message(message: &str) -> bool {
+        let m = message;
+        // 대표 오류 코드 및 메시지
+        m.contains("EGW00123") || m.contains("기간이 만료된 token") || m.to_ascii_lowercase().contains("token expired")
+    }
+
+    /// API 토큰을 재발급하고 내부 API 인스턴스를 교체
+    async fn refresh_api_token(&self) -> StockrsResult<()> {
+        let mode = self.mode;
+            let config = config::get_config()?;
+
+            // Info는 Real과 동일 토큰 사용
+            let api_type = match mode {
+                ApiMode::Real => crate::utility::types::api::ApiType::Real,
+                ApiMode::Paper => crate::utility::types::api::ApiType::Paper,
+                ApiMode::Info => crate::utility::types::api::ApiType::Real,
+            };
+
+            let account = korea_investment_api::types::Account {
+                cano: match mode {
+                    ApiMode::Real => config.korea_investment_api.real_account_number.clone(),
+                    ApiMode::Paper => config.korea_investment_api.paper_account_number.clone(),
+                    ApiMode::Info => config.korea_investment_api.info_account_number.clone(),
+                },
+                acnt_prdt_cd: match mode {
+                    ApiMode::Real => config.korea_investment_api.real_account_product_code.clone(),
+                    ApiMode::Paper => config.korea_investment_api.paper_account_product_code.clone(),
+                    ApiMode::Info => config.korea_investment_api.info_account_product_code.clone(),
+                },
+            };
+
+            let api = with_timeout_retry(
+                match mode {
+                    ApiMode::Real => "실거래",
+                    ApiMode::Paper => "모의투자",
+                    ApiMode::Info => "정보용 실전 API",
+                },
+                "토큰 재발급 및 API 재초기화",
+                || async {
+                    let api = korea_investment_api::KoreaInvestmentApi::new(
+                        match mode {
+                            ApiMode::Real => korea_investment_api::types::Environment::Real,
+                            ApiMode::Paper => korea_investment_api::types::Environment::Virtual,
+                            ApiMode::Info => korea_investment_api::types::Environment::Real,
+                        },
+                        match mode {
+                            ApiMode::Real => &config.korea_investment_api.real_app_key,
+                            ApiMode::Paper => &config.korea_investment_api.paper_app_key,
+                            ApiMode::Info => &config.korea_investment_api.info_app_key,
+                        },
+                        match mode {
+                            ApiMode::Real => &config.korea_investment_api.real_app_secret,
+                            ApiMode::Paper => &config.korea_investment_api.paper_app_secret,
+                            ApiMode::Info => &config.korea_investment_api.info_app_secret,
+                        },
+                        account.clone(),
+                        "HTS_ID",
+                        None,        // force new token issuance
+                        None,
+                    )
+                    .await
+                    .map_err(StockrsError::from)?;
+                    Ok(api)
+                },
+                TimeoutRetryPolicy { timeout_ms: 2_500, ..Default::default() },
+            )
+            .await?;
+
+            // 토큰 저장
+            if let (Some(token), Some(approval_key)) = (api.auth.get_token(), api.auth.get_approval_key()) {
+                if let Some(token_response) = api.auth.get_token_response() {
+                    let api_token = ApiToken {
+                        access_token: token,
+                        token_type: token_response.get_token_type(),
+                        expires_in: token_response.get_expires_in(),
+                        access_token_token_expired: token_response.get_access_token_token_expired(),
+                        issued_at: api.auth.get_token_issued_at().unwrap_or_else(|| Utc::now()),
+                        approval_key: Some(approval_key),
+                    };
+                    self.token_manager.update_token(api_type, api_token)?;
+                } else {
+                    warn!("토큰 응답 정보 누락 - 기본값 사용(재발급)");
+                    let api_token = ApiToken {
+                        access_token: token,
+                        token_type: "Bearer".to_string(),
+                        expires_in: 86400,
+                        access_token_token_expired: "2024-12-31 23:59:59".to_string(),
+                        issued_at: Utc::now(),
+                        approval_key: Some(approval_key),
+                    };
+                    self.token_manager.update_token(api_type, api_token)?;
+                }
+            }
+
+            // 내부 API 교체
+            {
+                let mut slot = self.api.borrow_mut();
+                *slot = Rc::new(api);
+            }
+
+            info!("🔑 [KoreaApi] 토큰 재발급 및 API 재초기화 완료: {:?}", mode);
+            Ok(())
+    }
+
+    /// 일반 호출을 감싸서 토큰 만료 시 재발급 후 1회 재시도
+    async fn call_with_token_refresh<T, Fut, F>(&self, op_name: &str, mut make_future: F) -> StockrsResult<T>
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = StockrsResult<T>>,
+    {
+        match with_timeout_retry(self.mode_name(), op_name, || make_future(), TimeoutRetryPolicy::default()).await {
+            Ok(v) => Ok(v),
+            Err(e) => {
+                let msg = e.to_string();
+                if Self::is_token_expired_message(&msg) {
+                    println!(
+                        "🔐 [KoreaApi:{}] {}: 토큰 만료 감지 -> 재발급 후 1회 재시도",
+                        self.mode_name(),
+                        op_name
+                    );
+                    // 재발급 후 재시도
+                    self.refresh_api_token().await?;
+                    // 재시도 (추가 만료는 상위로 전파)
+                    with_timeout_retry(self.mode_name(), op_name, || make_future(), TimeoutRetryPolicy::default()).await
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
     pub fn new_real() -> StockrsResult<Self> {
         let rt = tokio::runtime::Runtime::new()?;
         rt.block_on(async { Self::new(ApiMode::Real).await })
@@ -273,7 +405,7 @@ impl KoreaApi {
 
         Ok(Self {
             mode,
-            api: Rc::new(api),
+            api: RefCell::new(Rc::new(api)),
             token_manager,
         })
     }
@@ -294,35 +426,33 @@ impl StockApi for KoreaApi {
 
     fn execute_order(&self, order: &mut Order) -> StockrsResult<String> {
         let rt = tokio::runtime::Runtime::new()?;
-        let api = Rc::clone(&self.api);
 
         rt.block_on(async {
-            let result = with_timeout_retry(
-                self.mode_name(),
-                "주문 실행",
-                || async {
-                    // Order 구조체를 korea-investment-api 파라미터로 변환 (클로저 내부에서 매 시도 시 계산)
-                    let dir = match order.side {
-                        crate::utility::types::broker::OrderSide::Buy => korea_investment_api::types::Direction::Bid,
-                        crate::utility::types::broker::OrderSide::Sell => korea_investment_api::types::Direction::Ask,
-                    };
-
-                    let out = api
-                        .order
-                        .order_cash(
-                            korea_investment_api::types::OrderClass::Market,
-                            dir,
-                            &order.stockcode,
-                            korea_investment_api::types::Quantity::from(order.quantity),
-                            korea_investment_api::types::Price::from(0),
-                        )
-                        .await
-                        .map_err(StockrsError::from)?;
-                    Ok(out)
-                },
-                TimeoutRetryPolicy::default(),
-            )
-            .await?;
+            let result = self
+                .call_with_token_refresh(
+                    "주문 실행",
+                    || async {
+                        // Order 구조체를 korea-investment-api 파라미터로 변환 (매 시도 시 계산)
+                        let dir = match order.side {
+                            crate::utility::types::broker::OrderSide::Buy => korea_investment_api::types::Direction::Bid,
+                            crate::utility::types::broker::OrderSide::Sell => korea_investment_api::types::Direction::Ask,
+                        };
+                        let api = { self.api.borrow().clone() };
+                        let out = api
+                            .order
+                            .order_cash(
+                                korea_investment_api::types::OrderClass::Market,
+                                dir,
+                                &order.stockcode,
+                                korea_investment_api::types::Quantity::from(order.quantity),
+                                korea_investment_api::types::Price::from(0),
+                            )
+                            .await
+                            .map_err(StockrsError::from)?;
+                        Ok(out)
+                    },
+                )
+                .await?;
 
             let order_id = result
                 .output()
@@ -359,27 +489,26 @@ impl StockApi for KoreaApi {
 
     fn check_fill(&self, order_id: &str) -> StockrsResult<bool> {
         let rt = tokio::runtime::Runtime::new()?;
-        let api = Rc::clone(&self.api);
 
         rt.block_on(async {
             let today = chrono::Local::now().format("%Y%m%d").to_string();
 
-            let result = with_timeout_retry(
-                self.mode_name(),
-                "체결 조회",
-                || async {
-                    let out = api
-                        .order
-                        .inquire_daily_ccld(
-                            &today, &today, "", "", "", order_id, "01", "00", "", "", "01", None, None,
-                        )
-                        .await
-                        .map_err(StockrsError::from)?;
-                    Ok(out)
-                },
-                TimeoutRetryPolicy::default(),
-            )
-            .await?;
+            let result = self
+                .call_with_token_refresh(
+                    "체결 조회",
+                    || async {
+                        let api = { self.api.borrow().clone() };
+                        let out = api
+                            .order
+                            .inquire_daily_ccld(
+                                &today, &today, "", "", "", order_id, "01", "00", "", "", "01", None, None,
+                            )
+                            .await
+                            .map_err(StockrsError::from)?;
+                        Ok(out)
+                    },
+                )
+                .await?;
 
             let is_filled = !result
                 .output1()
@@ -403,31 +532,30 @@ impl StockApi for KoreaApi {
 
     fn cancel_order(&self, order_id: &str) -> StockrsResult<()> {
         let rt = tokio::runtime::Runtime::new()?;
-        let api = Rc::clone(&self.api);
 
         rt.block_on(async {
-            let _result = with_timeout_retry(
-                self.mode_name(),
-                "주문 취소",
-                || async {
-                    let out = api
-                        .order
-                        .correct(
-                            korea_investment_api::types::OrderClass::Market,
-                            "",
-                            order_id,
-                            korea_investment_api::types::CorrectionClass::Cancel,
-                            true,
-                            korea_investment_api::types::Quantity::from(0),
-                            korea_investment_api::types::Price::from(0),
-                        )
-                        .await
-                        .map_err(StockrsError::from)?;
-                    Ok(out)
-                },
-                TimeoutRetryPolicy::default(),
-            )
-            .await?;
+            let _result = self
+                .call_with_token_refresh(
+                    "주문 취소",
+                    || async {
+                        let api = { self.api.borrow().clone() };
+                        let out = api
+                            .order
+                            .correct(
+                                korea_investment_api::types::OrderClass::Market,
+                                "",
+                                order_id,
+                                korea_investment_api::types::CorrectionClass::Cancel,
+                                true,
+                                korea_investment_api::types::Quantity::from(0),
+                                korea_investment_api::types::Price::from(0),
+                            )
+                            .await
+                            .map_err(StockrsError::from)?;
+                        Ok(out)
+                    },
+                )
+                .await?;
 
             println!("❌ [KoreaApi:{}] 주문 취소: {}", self.mode_name(), order_id);
             Ok(())
@@ -436,39 +564,38 @@ impl StockApi for KoreaApi {
 
     fn get_balance(&self) -> StockrsResult<AssetInfo> {
         let rt = tokio::runtime::Runtime::new()?;
-        let api = Rc::clone(&self.api);
 
         rt.block_on(async {
-            let result = with_timeout_retry(
-                self.mode_name(),
-                "잔고 조회",
-                || async {
-                    let out = api
-                        .order
-                        .inquire_balance("N", "02", "01", "N", "N", "00", None, None)
-                        .await
-                        .map_err(StockrsError::from)?;
+            let result = self
+                .call_with_token_refresh(
+                    "잔고 조회",
+                    || async {
+                        let api = { self.api.borrow().clone() };
+                        let out = api
+                            .order
+                            .inquire_balance("N", "02", "01", "N", "N", "00", None, None)
+                            .await
+                            .map_err(StockrsError::from)?;
 
-                    // KIS 응답 본문이 에러이거나 핵심 출력이 비어있다면 재시도 대상으로 간주
-                    let missing_output2 = out
-                        .output2()
-                        .as_ref()
-                        .map(|v| v.is_empty())
-                        .unwrap_or(true);
-                    if out.rt_cd() != "0" || missing_output2 {
-                        return Err(StockrsError::api(format!(
-                            "KIS 잔고 조회 오류: rt_cd={}, msg_cd={}, msg1={}",
-                            out.rt_cd(),
-                            out.msg_cd(),
-                            out.msg1()
-                        )));
-                    }
+                        // KIS 응답 본문이 에러이거나 핵심 출력이 비어있다면 재시도 대상으로 간주
+                        let missing_output2 = out
+                            .output2()
+                            .as_ref()
+                            .map(|v| v.is_empty())
+                            .unwrap_or(true);
+                        if out.rt_cd() != "0" || missing_output2 {
+                            return Err(StockrsError::api(format!(
+                                "KIS 잔고 조회 오류: rt_cd={}, msg_cd={}, msg1={}",
+                                out.rt_cd(),
+                                out.msg_cd(),
+                                out.msg1()
+                            )));
+                        }
 
-                    Ok(out)
-                },
-                TimeoutRetryPolicy::default(),
-            )
-            .await?;
+                        Ok(out)
+                    },
+                )
+                .await?;
 
             let output2 = result
                 .output2()
@@ -495,39 +622,38 @@ impl StockApi for KoreaApi {
 
     fn get_avg_price(&self, stockcode: &str) -> StockrsResult<f64> {
         let rt = tokio::runtime::Runtime::new()?;
-        let api = Rc::clone(&self.api);
 
         rt.block_on(async {
-            let result = with_timeout_retry(
-                self.mode_name(),
-                "평균가/잔고 조회",
-                || async {
-                    let out = api
-                        .order
-                        .inquire_balance("N", "02", "01", "N", "N", "00", None, None)
-                        .await
-                        .map_err(StockrsError::from)?;
+            let result = self
+                .call_with_token_refresh(
+                    "평균가/잔고 조회",
+                    || async {
+                        let api = { self.api.borrow().clone() };
+                        let out = api
+                            .order
+                            .inquire_balance("N", "02", "01", "N", "N", "00", None, None)
+                            .await
+                            .map_err(StockrsError::from)?;
 
-                    // KIS 응답 본문이 에러이거나 핵심 출력이 비어있다면 재시도 대상으로 간주
-                    let missing_output1 = out
-                        .output1()
-                        .as_ref()
-                        .map(|v| v.is_empty())
-                        .unwrap_or(true);
-                    if out.rt_cd() != "0" || missing_output1 {
-                        return Err(StockrsError::api(format!(
-                            "KIS 잔고/보유종목 조회 오류: rt_cd={}, msg_cd={}, msg1={}",
-                            out.rt_cd(),
-                            out.msg_cd(),
-                            out.msg1()
-                        )));
-                    }
+                        // KIS 응답 본문이 에러이거나 핵심 출력이 비어있다면 재시도 대상으로 간주
+                        let missing_output1 = out
+                            .output1()
+                            .as_ref()
+                            .map(|v| v.is_empty())
+                            .unwrap_or(true);
+                        if out.rt_cd() != "0" || missing_output1 {
+                            return Err(StockrsError::api(format!(
+                                "KIS 잔고/보유종목 조회 오류: rt_cd={}, msg_cd={}, msg1={}",
+                                out.rt_cd(),
+                                out.msg_cd(),
+                                out.msg1()
+                            )));
+                        }
 
-                    Ok(out)
-                },
-                TimeoutRetryPolicy::default(),
-            )
-            .await?;
+                        Ok(out)
+                    },
+                )
+                .await?;
 
             let output1 =
                 result
@@ -567,7 +693,6 @@ impl StockApi for KoreaApi {
 
     fn get_current_price(&self, stockcode: &str) -> StockrsResult<f64> {
         let rt = tokio::runtime::Runtime::new()?;
-        let api = Rc::clone(&self.api);
 
         rt.block_on(async {
             // 종목코드에서 'A' 제거
@@ -577,35 +702,35 @@ impl StockApi for KoreaApi {
                 stockcode
             };
             
-            let result = with_timeout_retry(
-                self.mode_name(),
-                "현재가 조회",
-                || async {
-                    let out = api
-                        .quote
-                        .current_price(
-                            korea_investment_api::types::MarketCode::Stock,
-                            clean_stockcode,
-                        )
-                        .await
-                        .map_err(StockrsError::from)?;
+            let result = self
+                .call_with_token_refresh(
+                    "현재가 조회",
+                    || async {
+                        let api = { self.api.borrow().clone() };
+                        let out = api
+                            .quote
+                            .current_price(
+                                korea_investment_api::types::MarketCode::Stock,
+                                clean_stockcode,
+                            )
+                            .await
+                            .map_err(StockrsError::from)?;
 
-                    // KIS 응답 본문이 에러이거나 핵심 출력이 비어있다면 재시도 대상으로 간주
-                    let has_output = out.output().is_some();
-                    if out.rt_cd() != "0" || !has_output {
-                        return Err(StockrsError::api(format!(
-                            "KIS 현재가 조회 오류: rt_cd={}, msg_cd={}, msg1={}",
-                            out.rt_cd(),
-                            out.msg_cd(),
-                            out.msg1()
-                        )));
-                    }
+                        // KIS 응답 본문이 에러이거나 핵심 출력이 비어있다면 재시도 대상으로 간주
+                        let has_output = out.output().is_some();
+                        if out.rt_cd() != "0" || !has_output {
+                            return Err(StockrsError::api(format!(
+                                "KIS 현재가 조회 오류: rt_cd={}, msg_cd={}, msg1={}",
+                                out.rt_cd(),
+                                out.msg_cd(),
+                                out.msg1()
+                            )));
+                        }
 
-                    Ok(out)
-                },
-                TimeoutRetryPolicy::default(),
-            )
-            .await?;
+                        Ok(out)
+                    },
+                )
+                .await?;
 
             let output = result.output().as_ref().ok_or_else(|| {
                 StockrsError::price_inquiry(
@@ -671,62 +796,176 @@ impl KoreaApi {
     /// 주문번호 기반 체결 상세 조회 (주식일별주문체결조회)
     pub fn get_order_fill_info(&self, order_id: &str) -> StockrsResult<Option<OrderFillInfo>> {
         let rt = tokio::runtime::Runtime::new()?;
-        let api = Rc::clone(&self.api);
 
         rt.block_on(async move {
             let today = chrono::Local::now().format("%Y%m%d").to_string();
-            let result = with_timeout_retry(
-                self.mode_name(),
-                "주문 체결 상세 조회",
-                || async {
-                    let out = api
-                        .order
-                        .inquire_daily_ccld(
-                            &today,     // 시작일
-                            &today,     // 종료일
-                            "",         // 매도매수구분 전체
-                            "",         // 종목 전체
-                            "",         // 지점 전체
-                            order_id,   // 주문번호
-                            "00",      // 체결구분 전체
-                            "00",      // 조회구분 역순
-                            "",        // 조회구분1 전체
-                            "",        // 조회구분3 전체
-                            "01",      // 거래소ID구분코드 (KRX)
-                            None,
-                            None,
-                        )
-                        .await
-                        .map_err(StockrsError::from)?;
-                    Ok(out)
-                },
-                TimeoutRetryPolicy::default(),
-            )
-            .await?;
+            // 요청 파라미터(의사 요청 본문) 디버그 문자열 구성
+            let req_debug = format!(
+                "start_date={sd}, end_date={ed}, bs_dir=ALL, stock=ALL, branch=ALL, order_id={oid}, fill_class=ALL, sort=DESC, q1=ALL, q3=ALL, market=KRX",
+                sd = today,
+                ed = today,
+                oid = order_id
+            );
+            let result = self
+                .call_with_token_refresh(
+                    "주문 체결 상세 조회",
+                    || async {
+                        let api = { self.api.borrow().clone() };
+                        let out = api
+                            .order
+                            .inquire_daily_ccld(
+                                &today,     // 시작일
+                                &today,     // 종료일
+                                "",         // 매도매수구분 전체
+                                "",         // 종목 전체
+                                "",         // 지점 전체
+                                order_id,   // 주문번호
+                                "00",      // 체결구분 전체
+                                "00",      // 조회구분 역순
+                                "",        // 조회구분1 전체
+                                "",        // 조회구분3 전체
+                                "01",      // 거래소ID구분코드 (KRX)
+                                None,
+                                None,
+                            )
+                            .await
+                            .map_err(StockrsError::from)?;
+                        Ok(out)
+                    },
+                )
+                .await?;
 
-            let maybe = result
-                .output1()
-                .as_ref()
-                .and_then(|v| v.iter().find(|row| row.odno() == order_id))
-                .cloned();
+            // KIS 응답 상태 코드 검증 (비정상 응답은 요청/응답 본문 함께 출력 후 오류 처리)
+            if result.rt_cd() != "0" {
+                println!(
+                    "❌ [KoreaApi:{}] 주문 체결 상세 조회 요청: {}",
+                    self.mode_name(),
+                    req_debug
+                );
+                println!(
+                    "❌ [KoreaApi:{}] 응답 요약: rt_cd={}, msg_cd={}, msg1={}",
+                    self.mode_name(),
+                    result.rt_cd(),
+                    result.msg_cd(),
+                    result.msg1()
+                );
+                // 가능하다면 핵심 필드 스냅샷도 함께 출력
+                println!(
+                    "❌ [KoreaApi:{}] output1 존재 여부: {}",
+                    self.mode_name(),
+                    result.output1().is_some()
+                );
+                return Err(StockrsError::api(format!(
+                    "KIS 주문체결 조회 오류: rt_cd={}, msg_cd={}, msg1={}",
+                    result.rt_cd(),
+                    result.msg_cd(),
+                    result.msg1()
+                )));
+            }
 
-            if let Some(row) = maybe {
-                // 안전한 파싱 유틸
-                fn parse_u32(s: &str) -> u32 { s.trim().parse::<u32>().unwrap_or(0) }
-                fn parse_f64(s: &str) -> f64 { s.trim().parse::<f64>().unwrap_or(0.0) }
+            // 핵심 출력(output1) 누락 시 요청/응답 본문 출력 후 오류 처리
+            let output1 = match result.output1().as_ref() {
+                Some(o) => o,
+                None => {
+                    println!(
+                        "❌ [KoreaApi:{}] 주문 체결 상세 조회 요청: {}",
+                        self.mode_name(),
+                        req_debug
+                    );
+                    println!(
+                        "❌ [KoreaApi:{}] 응답 요약: rt_cd={}, msg_cd={}, msg1={}",
+                        self.mode_name(),
+                        result.rt_cd(),
+                        result.msg_cd(),
+                        result.msg1()
+                    );
+                    return Err(StockrsError::OrderFillCheck {
+                        order_id: order_id.to_string(),
+                        reason: "API 응답에서 체결 정보(output1)를 찾을 수 없음".to_string(),
+                    });
+                }
+            };
+
+            // 주문번호에 해당하는 행 탐색 (없으면 아직 미반영 상태로 간주하여 None 반환)
+            if let Some(row) = output1.iter().find(|row| row.odno() == order_id) {
+                // 엄격한 파싱: 실패 시 요청/응답 본문과 문제 필드 함께 출력 후 오류 반환
+                let parse_u32_strict = |s: &str, field: &str| -> StockrsResult<u32> {
+                    match s.trim().parse::<u32>() {
+                        Ok(v) => Ok(v),
+                        Err(e) => {
+                            println!(
+                                "❌ [KoreaApi:{}] 주문 체결 상세 조회 요청: {}",
+                                self.mode_name(),
+                                req_debug
+                            );
+                            println!(
+                                "❌ [KoreaApi:{}] 응답 요약: rt_cd={}, msg_cd={}, msg1={}",
+                                self.mode_name(),
+                                result.rt_cd(),
+                                result.msg_cd(),
+                                result.msg1()
+                            );
+                            println!(
+                                "❌ [KoreaApi:{}] 파싱 실패 필드: {}='{}' (order_id={})",
+                                self.mode_name(),
+                                field,
+                                s,
+                                order_id
+                            );
+                            Err(StockrsError::Parsing { data_type: field.to_string(), reason: e.to_string() })
+                        }
+                    }
+                };
+
+                let parse_f64_strict = |s: &str, field: &str| -> StockrsResult<f64> {
+                    match s.trim().parse::<f64>() {
+                        Ok(v) => Ok(v),
+                        Err(e) => {
+                            println!(
+                                "❌ [KoreaApi:{}] 주문 체결 상세 조회 요청: {}",
+                                self.mode_name(),
+                                req_debug
+                            );
+                            println!(
+                                "❌ [KoreaApi:{}] 응답 요약: rt_cd={}, msg_cd={}, msg1={}",
+                                self.mode_name(),
+                                result.rt_cd(),
+                                result.msg_cd(),
+                                result.msg1()
+                            );
+                            println!(
+                                "❌ [KoreaApi:{}] 파싱 실패 필드: {}='{}' (order_id={})",
+                                self.mode_name(),
+                                field,
+                                s,
+                                order_id
+                            );
+                            Err(StockrsError::Parsing { data_type: field.to_string(), reason: e.to_string() })
+                        }
+                    }
+                };
+
+                let ord_qty = parse_u32_strict(row.ord_qty(), "주문 수량")?;
+                let tot_ccld_qty = parse_u32_strict(row.tot_ccld_qty(), "총 체결 수량")?;
+                let rmn_qty = parse_u32_strict(row.rmn_qty(), "잔여 수량")?;
+                let ord_unpr = parse_f64_strict(row.ord_unpr(), "주문 단가")?;
+                let avg_prvs = parse_f64_strict(row.avg_prvs(), "평균가")?;
 
                 let info = OrderFillInfo {
                     ord_dt: row.ord_dt().to_string(),
                     ord_tmd: row.ord_tmd().to_string(),
                     pdno: row.pdno().to_string(),
-                    ord_qty: parse_u32(row.ord_qty()),
-                    tot_ccld_qty: parse_u32(row.tot_ccld_qty()),
-                    rmn_qty: parse_u32(row.rmn_qty()),
-                    ord_unpr: parse_f64(row.ord_unpr()),
-                    avg_prvs: parse_f64(row.avg_prvs()),
+                    ord_qty,
+                    tot_ccld_qty,
+                    rmn_qty,
+                    ord_unpr,
+                    avg_prvs,
                 };
                 Ok(Some(info))
             } else {
+                // 디버그용 응답 내용 출력
+                println!("주문 체결 상세 조회 결과: {:?}", output1);
+
                 Ok(None)
             }
         })

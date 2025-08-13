@@ -397,3 +397,10 @@
 2025-08-12T12:48:52+09:00: stockrs/src/utility/apis/korea_api.rs: 재시도 로직 강화 - 지수 백오프(max 6s), 최대 5회 재시도로 상향. 잔고/평균가/현재가 조회 시 rt_cd!="0" 또는 핵심 output 비어있을 때 오류로 간주하여 공통 재시도 경로로 유도. 중복 수동 루프 제거로 모든 함수가 단일 재시도 헬퍼를 통해 동작
 2025-08-12T13:05:00+09:00: stockrs/src/db_manager.rs: 모드 감지 로직을 API 타입 기반으로 엄격화 - `BacktestMode` 제거, `ApiTypeDetector::is_backtest()` 추가, `get_balance_with_context`로 통합하여 BacktestApi일 때만 시간 기반 잔고 계산 수행
 2025-08-12T13:12:30+09:00: stockrs/src/broker.rs: 보류 주문 처리 개선 - 대기열이 0개면 로그 없이 즉시 반환, 체결 조회 오류 발생 시 즉시 에러 반환하고 큐 상태 보존하여 다음 주기에 재시도 가능하도록 변경
+2025-08-13T11:02:37+09:00: stockrs/src/utility/apis/korea_api.rs: get_order_fill_info에서 예상치 못한 응답(rt_cd!="0", output1 누락, 파싱 실패)에 대해 에러를 반환하도록 변경. 주문번호에 해당 레코드가 아직 없을 때만 Ok(None) 유지
+2025-08-13T11:30:36+09:00: TASK.md: KIS 토큰 만료 감지(EGW00123/"기간이 만료된 token") 시 재발급 및 1회 재시도 로직 구현 태스크 추가 (목적/입출력/완료조건/관련 모듈/설계 메모 정리)
+2025-08-13T12:38:42+09:00: stockrs/src/utility/apis/korea_api.rs: 토큰 만료 자동 복구 구현 - 내부 API를 RefCell<Rc<...>>로 변경하여 재초기화 지원, 만료 감지 헬퍼/refresh_api_token/call_with_token_refresh 추가, 주문/잔고/현재가/체결/취소/체결상세 모든 호출에 1회 자동 재시도 적용
+2025-08-13T12:52:45+09:00: stockrs/src/utility/apis/korea_api.rs: nested Runtime panic 수정 - refresh_api_token을 async로 변경하고 call_with_token_refresh에서 await하여 런타임 중첩 문제 해결
+2025-08-13T13:13:01+09:00: TASK.md: 'KIS 토큰 만료 감지 후 재발급 및 1회 재시도 로직 추가' 태스크 완료 체크 및 완료 조건 상태 갱신
+2025-08-13T13:13:01+09:00: COMPLETE.md: 완료 이력에 'KIS 토큰 만료 감지 후 재발급 및 1회 재시도 로직 추가' 항목 추가
+2025-08-13T13:16:30+09:00: TODO.md: 'korea api 재시도 강제하는 로직 추가', '토큰 만료 시 재발급 로직 추가' 항목 완료 체크

@@ -483,6 +483,9 @@ tracing-log = "0.1"
 ## 2025-07-26
 - onnx_predictor 간단한 버전으로 작성 (rust_model_info.json 삭제, extra_stocks.txt 대신 stocks.txt 사용하는 로직으로 변경, onnx 바꾸고 실행가능하게 만들기, config 정리하기)
 
+## 2025-08-13
+- KIS 토큰 만료 감지 후 재발급 및 1회 재시도 로직 추가
+
 ## 2025-07-21
 - 시간 처리 로직 개선 (하드코딩된 시장 시간 상수 설정 파일 분리, now() 호출 시점 일관성 보장 메커니즘 구현, 주말·공휴일 체크 로직 분리 및 모듈화, 시간 관련 에러 처리 일관성 확보, Duration 연산 코드 중복 제거)
 - 시간 처리 로직 개선 (TimeService 포맷 통일 및 헬퍼 함수 모듈화, BacktestApi current_time 필드 제거)

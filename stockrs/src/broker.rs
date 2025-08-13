@@ -370,7 +370,7 @@ impl StockBroker {
                                 }
                             }
                         } else {
-                            debug!(
+                            println!(
                                 "⏳ [StockBroker::process_pending] 잔여수량: {} - 주문ID: {}",
                                 info.rmn_qty, item.order_id
                             );
