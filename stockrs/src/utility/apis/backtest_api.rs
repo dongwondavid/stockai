@@ -94,9 +94,9 @@ impl BacktestApi {
         }
 
         let now = Utc::now().naive_local();
-        let asset_info = AssetInfo::new(now, total_asset);
+        let asset_info = AssetInfo::new_with_stocks(now, *cash, total_asset - *cash);
 
-        info!("💰 [BacktestApi::calculate_balance] 총 자산 계산: 현금 {:.0}원 + 보유종목 = {:.0}원 (시간: {})", *cash, total_asset, current_time);
+        info!("💰 [BacktestApi::calculate_balance] 총 자산 계산: 주문가능 {:.0}원 + 유가증권 = {:.0}원 (시간: {})", *cash, total_asset, current_time);
 
         Ok(asset_info)
     }
@@ -259,10 +259,10 @@ impl BacktestApi {
         }
 
         let now = Utc::now().naive_local();
-        let asset_info = AssetInfo::new(now, total_asset);
+        let asset_info = AssetInfo::new_with_stocks(now, *cash, total_asset - *cash);
 
         debug!(
-            "💰 [BacktestApi] 총 자산 계산: 현금 {:.0}원 + 보유종목 = {:.0}원 (시간: {})",
+            "💰 [BacktestApi] 총 자산 계산: 주문가능 {:.0}원 + 유가증권 = {:.0}원 (시간: {})",
             *cash, total_asset, time_str
         );
 

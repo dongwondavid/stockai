@@ -1,5 +1,7 @@
 # 📝 변경 이력 로그
 
+2025-08-13T13:26:00+09:00: stockrs/src/utility/apis/korea_api.rs: 레이트 리미트 전용 재시도 로직 도입 - EGW00201/초당 거래건수/429에만 지수 백오프(기본 1100ms)로 재시도, 타임아웃 및 기타 오류는 즉시 에러 전파. call_with_token_refresh는 새 래퍼를 사용하여 토큰 만료 시 재발급 후 1회 재시도 유지
+2025-08-13T13:33:25+09:00: stockrs/src/utility/apis/korea_api.rs: 주문/취소 응답 검증 강화 - rt_cd != "0" 또는 핵심 필드(output) 누락 시 에러로 간주하여 레이트리미트(EGW00201 등) 재시도 경로로 진입하도록 수정
 2025-08-12T11:23:25+09:00: stockrs/src/utility/apis/korea_api.rs: 주문 실행 로그의 매수/매도 표기 오류 수정 및 잔고/평균가 조회에 EGW00201 발생 시 1초 대기 후 최대 3회 재시도 로직 추가
 2025-08-12T11:29:45+09:00: stockrs/src/runner.rs: 실전/모의 모드에서 매 분마다 보류 주문 처리와 overview 갱신을 수행하도록 메인 루프에 주기적 업데이트 로직 추가 (process_pending, update_overview 호출)
 
@@ -404,3 +406,19 @@
 2025-08-13T13:13:01+09:00: TASK.md: 'KIS 토큰 만료 감지 후 재발급 및 1회 재시도 로직 추가' 태스크 완료 체크 및 완료 조건 상태 갱신
 2025-08-13T13:13:01+09:00: COMPLETE.md: 완료 이력에 'KIS 토큰 만료 감지 후 재발급 및 1회 재시도 로직 추가' 항목 추가
 2025-08-13T13:16:30+09:00: TODO.md: 'korea api 재시도 강제하는 로직 추가', '토큰 만료 시 재발급 로직 추가' 항목 완료 체크
+2025-08-13T13:37:26+09:00: stockrs/src/broker.rs: process_pending 디버깅 출력 강화 - 항목별 처리 로그, 체결조회 결과, 평균가 출처, DB 저장 성공/실패, 보류/오류 요약 출력 추가. 시작 print!를 println!으로 변경해 줄바꿈 정렬 개선
+2025-08-13T13:42:23+09:00: stockrs/src/utility/apis/korea_api.rs: get_order_fill_info에 요청/응답 전체 맥락 로깅 추가 - rt_cd 비정상/출력 누락 시 요청 파라미터와 응답 요약 출력, 주문번호 미반영 시 rows 개수와 상위 3개 레코드 요약 출력
+2025-08-13T15:21:07+09:00: stockrs/src/utility/apis/korea_api.rs: 주문 체결 상세 조회에 레이트리미트 재시도 적용 - rt_cd!='0' 또는 output1 비어있을 때 오류로 전파하여 공통 with_rate_limit_retry 경로에서 지수 백오프 재시도 수행
+2025-08-13T16:30:00+09:00: korea-investment-api/src/stock/order.rs: inquire_daily_ccld 함수에 missing field 오류 디버깅 코드 추가 - missing field 발생 시 원본 HTTP 응답을 raw 형태로 출력하여 JSON 파싱 오류 원인 파악 가능
+
+2025-01-27T17:00: stockrs/src/utility/types/trading.rs: AssetInfo 구조체 확장 - 현금(cash)과 주식가치(stock_value) 필드 추가, 기존 호환성을 위한 get_asset() 메서드 유지, new_with_stocks() 생성자 추가하여 현금과 주식을 분리하여 저장 가능
+2025-01-27T17:00: stockrs/src/utility/apis/korea_api.rs: get_balance 메서드 개선 - tot_evlu_amt (총평가금액) 사용하여 현금과 주식 가치를 한 번에 계산, 별도 현재가 조회 없이 총 자산 계산하여 런타임 중첩 문제 해결, AssetInfo::new_with_stocks 사용하여 현금과 주식 가치 분리 저장
+2025-01-27T17:00: stockrs/src/utility/apis/backtest_api.rs: AssetInfo 생성 방식 통일 - AssetInfo::new_with_stocks 사용하여 현금과 주식 가치를 명확히 분리하여 저장, 기존 로직과 일관성 유지
+2025-01-27T17:00: stockrs/src/db_manager.rs: 로깅 개선 - 현금과 주식 가치를 분리하여 출력하도록 로그 메시지 개선, insert_overview, update_overview, finish_overview에서 상세한 자산 정보 출력
+2025-01-27T17:30: stockrs/src/utility/types/trading.rs: AssetInfo 구조체 필드명 개선 - cash를 available_amount(주문가능금액)로, stock_value를 securities_value(유가증권평가금액)로 변경, 기존 호환성을 위한 별칭 메서드(get_cash, get_stock_value) 유지
+2025-01-27T17:30: stockrs/src/utility/apis/korea_api.rs: get_balance 메서드 개선 - scts_evlu_amt(유가증권평가금액) 직접 사용, tot_evlu_amt로 검증 로직 추가, 필드명을 주문가능금액/유가증권평가금액으로 명확화
+2025-01-27T17:30: stockrs/src/utility/apis/backtest_api.rs: 로깅 메시지 개선 - 현금/보유종목을 주문가능/유가증권으로 변경하여 일관성 유지
+2025-01-27T17:30: stockrs/src/db_manager.rs: 로깅 메시지 개선 - 새로운 필드명(주문가능/유가증권)에 맞게 모든 로그 메시지 업데이트
+
+2025-01-27T18:00: stockrs/src/utility/apis/korea_api.rs: 총평가금액 검증 로직 제거 - 주문가능금액과 유가증권평가금액의 단순 합계가 총평가금액과 다를 수 있음을 반영, 각 필드를 독립적으로 사용하도록 수정
+2025-01-27T18:00: stockrs/src/utility/types/trading.rs: AssetInfo 구조체에 total_asset 필드 추가 - API에서 제공하는 총평가금액을 별도로 저장, new_with_api_total 생성자 추가하여 API 총평가금액을 정확히 반영

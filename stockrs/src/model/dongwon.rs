@@ -19,8 +19,8 @@ impl Default for DongwonModel {
         // 기본값: 삼성전자, 09:10 매수, 15:15 전량 매도, 1주
         Self {
             stockcode: "005930".to_string(),
-            entry_time: "12:59:00".to_string(),
-            exit_time: "13:01:00".to_string(),
+            entry_time: "13:44:00".to_string(),
+            exit_time: "13:46:00".to_string(),
             quantity: 100,
             holding_qty: 0,
         }

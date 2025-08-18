@@ -156,7 +156,10 @@ impl TradingResultBuilder {
 
 pub struct AssetInfo {
     date: NaiveDateTime,
-    asset: f64,
+    asset: f64,                    // 기존 호환성을 위한 총 자산
+    available_amount: f64,         // 주문 가능 금액 (D+2 예수금)
+    securities_value: f64,         // 유가증권 평가금액
+    total_asset: f64,              // 실제 총 자산 (API에서 제공하는 값)
 }
 
 /*
@@ -165,14 +168,70 @@ pub struct AssetInfo {
 
 impl AssetInfo {
     pub fn new(date: NaiveDateTime, asset: f64) -> Self {
-        Self { date, asset }
+        // 기존 호환성을 위해 asset을 총 자산으로 간주하고, 주문가능금액과 유가증권평가금액을 추정
+        Self { 
+            date, 
+            asset, 
+            available_amount: asset,      // 기본값으로 총 자산을 주문가능금액으로 설정
+            securities_value: 0.0,        // 유가증권평가금액은 별도 설정 필요
+            total_asset: asset            // 기본값으로 asset을 총 자산으로 설정
+        }
+    }
+
+    /// 주문가능금액과 유가증권평가금액을 모두 포함한 총 자산 생성
+    pub fn new_with_stocks(date: NaiveDateTime, available_amount: f64, securities_value: f64) -> Self {
+        let calculated_total = available_amount + securities_value;
+        Self { 
+            date, 
+            asset: calculated_total,           // 기존 호환성을 위해 asset 필드도 설정
+            available_amount, 
+            securities_value,
+            total_asset: calculated_total      // 계산된 총 자산
+        }
+    }
+
+    /// API에서 제공하는 총평가금액을 포함한 생성자
+    pub fn new_with_api_total(date: NaiveDateTime, available_amount: f64, securities_value: f64, api_total: f64) -> Self {
+        Self { 
+            date, 
+            asset: api_total,                 // API 총평가금액을 asset으로 설정
+            available_amount, 
+            securities_value,
+            total_asset: api_total            // API에서 제공하는 총평가금액
+        }
     }
 
     pub fn get_date(&self) -> NaiveDateTime {
         self.date
     }
+
+    /// 기존 호환성을 위한 메서드 - 총 자산 반환
     pub fn get_asset(&self) -> f64 {
         self.asset
+    }
+
+    /// 주문 가능 금액 반환 (D+2 예수금)
+    pub fn get_available_amount(&self) -> f64 {
+        self.available_amount
+    }
+
+    /// 유가증권 평가금액 반환
+    pub fn get_securities_value(&self) -> f64 {
+        self.securities_value
+    }
+
+    /// 총 자산 반환 (API에서 제공하는 값 또는 계산된 값)
+    pub fn get_total_asset(&self) -> f64 {
+        self.total_asset
+    }
+
+    // 기존 호환성을 위한 별칭 메서드들
+    pub fn get_cash(&self) -> f64 {
+        self.available_amount
+    }
+
+    pub fn get_stock_value(&self) -> f64 {
+        self.securities_value
     }
 }
 

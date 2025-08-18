@@ -77,6 +77,8 @@ pub struct TradingConfig {
     pub max_position_amount: u64,
     pub stop_loss_ratio: f64,
     pub initial_capital: f64,
+    pub real_buy_fee_rate: f64,
+    pub real_sell_fee_rate: f64,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -245,7 +247,19 @@ impl Config {
             self.onnx_model.model_file_path = path;
         }
 
-        // 실제 거래 API 키들 (보안상 환경변수 우선)
+        // 실전/모의투자 수수료율 (보안상 환경변수 우선)
+        if let Ok(rate) = std::env::var("TRADING_REAL_BUY_FEE_RATE") {
+            if let Ok(rate_value) = rate.parse::<f64>() {
+                self.trading.real_buy_fee_rate = rate_value;
+            }
+        }
+        if let Ok(rate) = std::env::var("TRADING_REAL_SELL_FEE_RATE") {
+            if let Ok(rate_value) = rate.parse::<f64>() {
+                self.trading.real_sell_fee_rate = rate_value;
+            }
+        }
+
+        // 실전/모의투자 API 키들 (보안상 환경변수 우선)
         if let Ok(key) = std::env::var("KOREA_INVESTMENT_REAL_APP_KEY") {
             self.korea_investment_api.real_app_key = key;
         }
@@ -310,6 +324,18 @@ impl Config {
         if self.trading.stop_loss_ratio <= 0.0 || self.trading.stop_loss_ratio > 100.0 {
             return Err(ConfigError::ValidationError(
                 "stop_loss_ratio는 0~100 사이여야 합니다".to_string(),
+            ));
+        }
+
+        // 실전/모의투자 수수료율 검증
+        if self.trading.real_buy_fee_rate < 0.0 || self.trading.real_buy_fee_rate > 10.0 {
+            return Err(ConfigError::ValidationError(
+                "real_buy_fee_rate는 0~10 사이여야 합니다".to_string(),
+            ));
+        }
+        if self.trading.real_sell_fee_rate < 0.0 || self.trading.real_sell_fee_rate > 10.0 {
+            return Err(ConfigError::ValidationError(
+                "real_sell_fee_rate는 0~10 사이여야 합니다".to_string(),
             ));
         }
 

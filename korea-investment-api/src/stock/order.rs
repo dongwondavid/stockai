@@ -278,15 +278,31 @@ impl Korea {
         for (k, v) in params.into_iter() {
             req = req.query(&[(k, v)]);
         }
-        Ok(req
+        let response = req
             .send()
-            .await?
-            .json::<response::stock::order::Body::InquireDailyCcld>()
-            .await?)
+            .await?;
+        
+        // missing field 오류 디버깅을 위해 원본 응답을 먼저 text로 가져옴
+        let response_text = response.text().await?;
+        
+        // JSON 파싱 시도
+        match serde_json::from_str::<response::stock::order::Body::InquireDailyCcld>(&response_text) {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                // missing field 오류가 발생한 경우 원본 응답을 출력
+                if e.to_string().contains("missing field") {
+                    eprintln!("🔍 [KoreaInvestmentApi] inquire_daily_ccld missing field 오류 발생");
+                    eprintln!("🔍 [KoreaInvestmentApi] 오류 상세: {}", e);
+                    eprintln!("🔍 [KoreaInvestmentApi] 원본 응답 (raw):");
+                    eprintln!("{}", response_text);
+                }
+                Err(e.into())
+            }
+        }
     }
 
     /// 주식잔고조회[v1_국내주식-006]
-    /// [Docs](https://apiportal.koreainvestment.com/apiservice/apiservice-domestic-stock#L_66c61080-674f-4c91-a0cc-db5e64e9a5e6)
+    /// [Docs](https://apiportal.koreainvestment.com/apiservice-apiservice?/uapi/domestic-stock/v1/trading/inquire-balance)
     pub async fn inquire_balance(
         &self,
         afhr_flpr_yn: &str,

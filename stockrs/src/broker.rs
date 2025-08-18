@@ -343,14 +343,61 @@ impl StockBroker {
             return Ok(());
         }
 
-        print!(" [Broker] 보류 주문 처리 시작 ({}개)", initial_len);
+        println!(" [Broker] 보류 주문 처리 시작 ({}개)", initial_len);
 
-        while let Some(item) = deque.pop_front() {
+        let mut num_processed: usize = 0;
+        let mut num_saved: usize = 0;
+        let mut num_remaining: usize = 0;
+        let mut num_errors: usize = 0;
+
+        while let Some(mut item) = deque.pop_front() {
+            num_processed += 1;
+            println!(
+                "➡️ [StockBroker::process_pending] 처리 {}/{} - 주문ID:{} 종목:{} 유형:{} 수량:{} 가격:{:.0}",
+                num_processed,
+                initial_len,
+                item.order_id,
+                item.order.get_stockcode(),
+                if item.order.get_buy_or_sell() { "매수" } else { "매도" },
+                item.order.get_quantity(),
+                item.order.get_price()
+            );
             let api = self.api.as_any();
             if let Some(kapi) = api.downcast_ref::<crate::utility::apis::KoreaApi>() {
                 match kapi.get_order_fill_info(&item.order_id) {
                     Ok(Some(info)) => {
+                        println!(
+                            "📄 [StockBroker::process_pending] 체결조회 성공 - 주문ID:{} rmn_qty:{} avg_prvs:{:.2}",
+                            item.order_id, info.rmn_qty, info.avg_prvs
+                        );
                         if info.rmn_qty == 0 {
+                            // 실전/모의 투자 시 fee 계산
+                            if self.trading_mode != crate::utility::types::trading::TradingMode::Backtest {
+                                match crate::utility::config::get_config() {
+                                    Ok(config) => {
+                                        let fee_rate = if item.order.get_buy_or_sell() {
+                                            config.trading.real_buy_fee_rate
+                                        } else {
+                                            config.trading.real_sell_fee_rate
+                                        };
+                                        
+                                        let order_amount = item.order.get_price() * item.order.get_quantity() as f64;
+                                        let fee = order_amount * (fee_rate / 100.0);
+                                        
+                                        // Order의 fee 필드 업데이트
+                                        item.order.fee = fee;
+                                        
+                                        println!(
+                                            "💰 [StockBroker::process_pending] Fee 계산 완료 - 주문ID:{} 수수료율:{:.3}% 수수료:{:.0}원",
+                                            item.order_id, fee_rate, fee
+                                        );
+                                    }
+                                    Err(e) => {
+                                        println!("⚠️ [StockBroker::process_pending] Config 조회 실패, 기본 fee 사용: {}", e);
+                                    }
+                                }
+                            }
+                            
                             let trading = item.order.to_trading();
                             let avg_for_profit = if item.order.get_buy_or_sell() {
                                 // 매수: avg_prvs로 기록
@@ -359,14 +406,25 @@ impl StockBroker {
                                 // 매도: 보유 평균가(사전 조회)로 수익 계산
                                 item.pre_sell_avg.unwrap_or(info.avg_prvs)
                             };
+                            println!(
+                                "✅ [StockBroker::process_pending] 전량 체결 - 주문ID:{} 사용평균가:{:.2} (출처:{})",
+                                item.order_id,
+                                avg_for_profit,
+                                if item.order.get_buy_or_sell() { "avg_prvs" } else if item.pre_sell_avg.is_some() { "pre_sell_avg" } else { "avg_prvs(fallback)" }
+                            );
                             match db.save_trading(trading, avg_for_profit) {
-                                Ok(_) => info!(
-                                    "📝 [StockBroker::process_pending] 저장 완료 - 주문ID: {} avg:{:.2}",
-                                    item.order_id, avg_for_profit
-                                ),
+                                Ok(_) => {
+                                    println!(
+                                        "💾 [StockBroker::process_pending] DB 저장 성공 - 주문ID:{} avg:{:.2}",
+                                        item.order_id, avg_for_profit
+                                    );
+                                    num_saved += 1;
+                                }
                                 Err(e) => {
                                     println!("❌ [StockBroker::process_pending] 저장 실패: {}", e);
                                     remaining.push_back(item);
+                                    num_errors += 1;
+                                    num_remaining += 1;
                                 }
                             }
                         } else {
@@ -375,14 +433,23 @@ impl StockBroker {
                                 info.rmn_qty, item.order_id
                             );
                             remaining.push_back(item);
+                            num_remaining += 1;
                         }
                     }
                     Ok(None) => {
                         // 아직 API에 체결 기록이 없는 경우 보류 유지
                         remaining.push_back(item);
+                        println!(
+                            "⏳ [StockBroker::process_pending] 체결 기록 없음 - 주문ID:{} 보류 유지",
+                            remaining.back().map(|it| it.order_id.as_str()).unwrap_or("")
+                        );
+                        num_remaining += 1;
                     }
                     Err(e) => {
-                        println!("❌ [StockBroker::process_pending] 조회 실패: {}", e);
+                        println!(
+                            "❌ [StockBroker::process_pending] 체결조회 실패 - 주문ID:{} 오류:{}",
+                            item.order_id, e
+                        );
                         // 현재 항목을 남김 처리하고, 나머지 큐도 보존한 뒤 오류 반환
                         remaining.push_back(item);
                         // 남아있는 항목들을 remaining으로 모두 이동하여 상태 보존
@@ -397,12 +464,20 @@ impl StockBroker {
             } else {
                 // KoreaApi가 아닌 경우 보류 유지
                 remaining.push_back(item);
+                num_remaining += 1;
+                println!(
+                    "⚠️ [StockBroker::process_pending] KoreaApi 아님 - 주문 보류 유지"
+                );
             }
         }
 
         *deque = remaining;
 
         println!(" => 완료 ({}개 남음)", deque.len());
+        println!(
+            "📊 [StockBroker::process_pending] 요약 - 처리:{} 저장성공:{} 보류:{} 오류:{}",
+            num_processed, num_saved, num_remaining, num_errors
+        );
 
         Ok(())
     }

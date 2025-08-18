@@ -8,6 +8,7 @@ use crate::utility::token_manager::{TokenManager, ApiToken};
 use std::any::Any;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::collections::HashMap;
 use chrono::Utc;
 use tracing::{info, warn};
 use std::time::Duration;
@@ -25,6 +26,8 @@ pub struct KoreaApi {
     mode: ApiMode,
     api: RefCell<Rc<korea_investment_api::KoreaInvestmentApi>>,
     token_manager: TokenManager,
+    // 주문번호별 주문채번지점번호(영업점코드) 저장: order_id -> ord_gno_brno / krx_fwdg_ord_orgno
+    order_branch_map: RefCell<HashMap<String, String>>, 
 }
 
 /// 한국투자 주식일별주문체결조회 결과 요약
@@ -53,28 +56,24 @@ impl Default for TimeoutRetryPolicy {
     fn default() -> Self {
         Self {
             max_retries: 5,
-            base_delay_ms: 1_000,
+            base_delay_ms: 1_100,
             max_delay_ms: 6_000,
-            timeout_ms: 1_500,
+            timeout_ms: 6_000,
             retry_on_error: true,
         }
     }
 }
 
-fn is_retryable_error_message(message: &str) -> bool {
+fn is_rate_limit_error_message(message: &str) -> bool {
     let m = message;
-    // KIS rate limit and common transient HTTP errors
+    // KIS rate limit only
     m.contains("EGW00201")
         || m.contains("초당 거래건수")
         || m.contains("Too Many Requests")
         || m.contains("429")
-        || m.contains("status=5")
-        || m.contains("HTTP 5")
-        || m.contains("gateway time-out")
-        || m.contains("timed out")
 }
 
-async fn with_timeout_retry<T, Fut, F>(mode_name: &str, op_name: &str, mut make_future: F, policy: TimeoutRetryPolicy) -> StockrsResult<T>
+async fn with_rate_limit_retry<T, Fut, F>(mode_name: &str, op_name: &str, mut make_future: F, policy: TimeoutRetryPolicy) -> StockrsResult<T>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = StockrsResult<T>>,
@@ -91,10 +90,10 @@ where
             Ok(Err(err)) => {
                 let attempt_allowed = attempt_index <= policy.max_retries;
                 let msg = err.to_string();
-                if policy.retry_on_error && attempt_allowed && is_retryable_error_message(&msg) {
+                if policy.retry_on_error && attempt_allowed && is_rate_limit_error_message(&msg) {
                     let delay_ms = current_delay_ms;
                     println!(
-                        "⚠️ [KoreaApi:{}] {} 오류 재시도({}/{}): {} (대기 {}ms)",
+                        "⚠️ [KoreaApi:{}] {} 레이트리미트 재시도({}/{}): {} (대기 {}ms)",
                         mode_name,
                         op_name,
                         attempt_index,
@@ -111,27 +110,11 @@ where
                 return Err(err);
             }
             Err(_elapsed) => {
-                if attempt_index > policy.max_retries {
-                    return Err(StockrsError::Network {
-                        operation: format!("{} ({})", op_name, mode_name),
-                        reason: format!("요청 타임아웃(>{}ms) - 최대 재시도 초과 {}", policy.timeout_ms, policy.max_retries),
-                    });
-                }
-
-                let delay_ms = current_delay_ms;
-                println!(
-                    "⏳ [KoreaApi:{}] {} 타임아웃 - 재시도 {}/{} (대기 {}ms)",
-                    mode_name,
-                    op_name,
-                    attempt_index,
-                    policy.max_retries,
-                    delay_ms
-                );
-
-                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-                // Exponential backoff up to max_delay_ms
-                current_delay_ms = (current_delay_ms.saturating_mul(2)).min(policy.max_delay_ms);
-                continue;
+                // 타임아웃은 재시도하지 않고 즉시 에러 반환
+                return Err(StockrsError::Network {
+                    operation: format!("{} ({})", op_name, mode_name),
+                    reason: format!("요청 타임아웃(>{}ms)", policy.timeout_ms),
+                });
             }
         }
     }
@@ -170,7 +153,7 @@ impl KoreaApi {
                 },
             };
 
-            let api = with_timeout_retry(
+            let api = with_rate_limit_retry(
                 match mode {
                     ApiMode::Real => "실거래",
                     ApiMode::Paper => "모의투자",
@@ -249,7 +232,7 @@ impl KoreaApi {
         F: FnMut() -> Fut,
         Fut: std::future::Future<Output = StockrsResult<T>>,
     {
-        match with_timeout_retry(self.mode_name(), op_name, || make_future(), TimeoutRetryPolicy::default()).await {
+        match with_rate_limit_retry(self.mode_name(), op_name, || make_future(), TimeoutRetryPolicy::default()).await {
             Ok(v) => Ok(v),
             Err(e) => {
                 let msg = e.to_string();
@@ -262,7 +245,7 @@ impl KoreaApi {
                     // 재발급 후 재시도
                     self.refresh_api_token().await?;
                     // 재시도 (추가 만료는 상위로 전파)
-                    with_timeout_retry(self.mode_name(), op_name, || make_future(), TimeoutRetryPolicy::default()).await
+                    with_rate_limit_retry(self.mode_name(), op_name, || make_future(), TimeoutRetryPolicy::default()).await
                 } else {
                     Err(e)
                 }
@@ -329,7 +312,7 @@ impl KoreaApi {
 
         let mode_name = match mode { ApiMode::Real => "실거래", ApiMode::Paper => "모의투자", ApiMode::Info => "정보용 실전 API" };
 
-        let api = with_timeout_retry(
+        let api = with_rate_limit_retry(
             mode_name,
             "API 초기화",
             || async {
@@ -407,6 +390,7 @@ impl KoreaApi {
             mode,
             api: RefCell::new(Rc::new(api)),
             token_manager,
+            order_branch_map: RefCell::new(HashMap::new()),
         })
     }
 
@@ -449,6 +433,15 @@ impl StockApi for KoreaApi {
                             )
                             .await
                             .map_err(StockrsError::from)?;
+                        // 응답 상태 검증: 비정상(rt_cd != "0") 또는 핵심 필드 누락은 오류로 간주하여 재시도 분기(레이트리미트 등)에 태움
+                        if out.rt_cd() != "0" || out.output().is_none() {
+                            return Err(StockrsError::api(format!(
+                                "KIS 주문 오류: rt_cd={}, msg_cd={}, msg1={}",
+                                out.rt_cd(),
+                                out.msg_cd(),
+                                out.msg1()
+                            )));
+                        }
                         Ok(out)
                     },
                 )
@@ -470,6 +463,20 @@ impl StockApi for KoreaApi {
                 })?
                 .odno()
                 .clone();
+
+            // 주문 응답에서 지점/영업점 코드 추출 후 맵에 저장
+            if let Some(out) = result.output().as_ref() {
+                let branch = out.krx_fwdg_ord_orgno();
+                self.order_branch_map
+                    .borrow_mut()
+                    .insert(order_id.clone(), branch.to_string());
+                println!(
+                    "🏷️ [KoreaApi:{}] 주문ID:{} 영업점코드 저장: {}",
+                    self.mode_name(),
+                    order_id,
+                    branch
+                );
+            }
 
             println!(
                 "📈 [KoreaApi:{}] 주문 실행: {} {} {}주 -> 주문번호: {}",
@@ -552,6 +559,14 @@ impl StockApi for KoreaApi {
                             )
                             .await
                             .map_err(StockrsError::from)?;
+                        if out.rt_cd() != "0" {
+                            return Err(StockrsError::api(format!(
+                                "KIS 주문 취소 오류: rt_cd={}, msg_cd={}, msg1={}",
+                                out.rt_cd(),
+                                out.msg_cd(),
+                                out.msg1()
+                            )));
+                        }
                         Ok(out)
                     },
                 )
@@ -605,18 +620,45 @@ impl StockApi for KoreaApi {
                     reason: "API 응답에서 잔고 정보를 찾을 수 없음".to_string(),
                 })?;
 
+            // 주문 가능 금액 (D+2 예수금) 조회
             let amt_str = output2.dnca_tot_amt();
-            let total_cash = amt_str
+            let available_amount = amt_str
                 .parse::<f64>()
                 .map_err(|parse_err| StockrsError::Parsing {
-                    data_type: "예수금 총액".to_string(),
+                    data_type: "주문가능금액(D+2 예수금)".to_string(),
                     reason: format!("'{}'를 숫자로 변환 실패: {}", amt_str, parse_err),
                 })?;
 
-            // println은 호출 목적에 따라 호출부에서 출력하도록 위임
+            // 유가증권 평가금액 조회
+            let scts_evlu_amt_str = output2.scts_evlu_amt();
+            let securities_value = scts_evlu_amt_str
+                .parse::<f64>()
+                .map_err(|parse_err| StockrsError::Parsing {
+                    data_type: "유가증권 평가금액".to_string(),
+                    reason: format!("'{}'를 숫자로 변환 실패: {}", scts_evlu_amt_str, parse_err),
+                })?;
+
+            // 총평가금액 (참고용)
+            let tot_evlu_amt_str = output2.tot_evlu_amt();
+            let total_asset = tot_evlu_amt_str
+                .parse::<f64>()
+                .map_err(|parse_err| StockrsError::Parsing {
+                    data_type: "총평가금액".to_string(),
+                    reason: format!("'{}'를 숫자로 변환 실패: {}", tot_evlu_amt_str, parse_err),
+                })?;
 
             use chrono::Local;
-            Ok(AssetInfo::new(Local::now().naive_local(), total_cash))
+            let now = Local::now().naive_local();
+            
+            println!(
+                "💰 [KoreaApi:{}] 잔고 조회 완료 - 주문가능: {:.0}원, 유가증권: {:.0}원, 총평가금액: {:.0}원",
+                self.mode_name(),
+                available_amount,
+                securities_value,
+                total_asset
+            );
+
+            Ok(AssetInfo::new_with_api_total(now, available_amount, securities_value, total_asset))
         })
     }
 
@@ -777,8 +819,10 @@ impl StockApi for KoreaApi {
 impl KoreaApi {
     /// 거래대금 순위 상위 종목 조회 (실전/모의 투자용)
     pub fn get_top_amount_stocks(&self, _limit: usize) -> StockrsResult<Vec<String>> {
-        // TODO: 구현 필요
-        Ok(vec![])
+        Err(StockrsError::UnsupportedFeature {
+            feature: "거래대금 순위 상위 종목 조회".to_string(),
+            phase: "실시간/모의투자 모드".to_string(),
+        })
     }
 
     /// 토큰 상태 정보 출력
@@ -799,12 +843,41 @@ impl KoreaApi {
 
         rt.block_on(async move {
             let today = chrono::Local::now().format("%Y%m%d").to_string();
+            // 파라미터 매핑 (실전/모의 동일 정책, 모의는 KRX만 제공)
+            let sll_buy_cd = "00";        // SLL_BUY_DVSN_CD: 전체
+            let pdno = "";               // PDNO: 전체
+            // ORD_GNO_BRNO: 주문시 부여된 지점코드를 사용. 모르면 기본 '00000'
+            let ord_gno_brno = self
+                .order_branch_map
+                .borrow()
+                .get(order_id)
+                .cloned()
+                .unwrap_or_else(|| "00000".to_string());
+            let ccld_dvsn = "00";        // CCLD_DVSN: 전체
+            let inqr_dvsn = "00";        // INQR_DVSN: 역순
+            let inqr_dvsn_1 = "";        // INQR_DVSN_1: 전체 (명세상 '없음' → 빈 문자열)
+            let inqr_dvsn_3 = "00";      // INQR_DVSN_3: 전체
+            let excg_id = "01";          // EXCG_ID_DVSN_CD: KRX (모의투자는 KRX만 지원)
             // 요청 파라미터(의사 요청 본문) 디버그 문자열 구성
             let req_debug = format!(
-                "start_date={sd}, end_date={ed}, bs_dir=ALL, stock=ALL, branch=ALL, order_id={oid}, fill_class=ALL, sort=DESC, q1=ALL, q3=ALL, market=KRX",
+                "INQR_STRT_DT={sd}, INQR_END_DT={ed}, SLL_BUY_DVSN_CD={bs}, PDNO={pd}, ORD_GNO_BRNO={br}, ODNO={oid}, CCLD_DVSN={cd}, INQR_DVSN={iv}, INQR_DVSN_1={iv1}, INQR_DVSN_3={iv3}, EXCG_ID_DVSN_CD={ex}",
                 sd = today,
                 ed = today,
-                oid = order_id
+                bs = sll_buy_cd,
+                pd = if pdno.is_empty() { "<ALL>" } else { pdno },
+                br = ord_gno_brno,
+                oid = order_id,
+                cd = ccld_dvsn,
+                iv = inqr_dvsn,
+                iv1 = if inqr_dvsn_1.is_empty() { "<ALL>" } else { inqr_dvsn_1 },
+                iv3 = inqr_dvsn_3,
+                ex = excg_id
+            );
+            println!(
+                "🧾 [KoreaApi:{}] 체결조회 지점코드 사용 - ODNO:{} ORD_GNO_BRNO:{}",
+                self.mode_name(),
+                order_id,
+                ord_gno_brno
             );
             let result = self
                 .call_with_token_refresh(
@@ -814,54 +887,40 @@ impl KoreaApi {
                         let out = api
                             .order
                             .inquire_daily_ccld(
-                                &today,     // 시작일
-                                &today,     // 종료일
-                                "",         // 매도매수구분 전체
-                                "",         // 종목 전체
-                                "",         // 지점 전체
-                                order_id,   // 주문번호
-                                "00",      // 체결구분 전체
-                                "00",      // 조회구분 역순
-                                "",        // 조회구분1 전체
-                                "",        // 조회구분3 전체
-                                "01",      // 거래소ID구분코드 (KRX)
+                                &today,         // INQR_STRT_DT
+                                &today,         // INQR_END_DT
+                                sll_buy_cd,     // SLL_BUY_DVSN_CD
+                                pdno,           // PDNO
+                                &ord_gno_brno,  // ORD_GNO_BRNO
+                                order_id,       // ODNO
+                                ccld_dvsn,      // CCLD_DVSN
+                                inqr_dvsn,      // INQR_DVSN
+                                inqr_dvsn_1,    // INQR_DVSN_1
+                                inqr_dvsn_3,    // INQR_DVSN_3
+                                excg_id,        // EXCG_ID_DVSN_CD
                                 None,
                                 None,
                             )
                             .await
                             .map_err(StockrsError::from)?;
+                        // 레이트리미트 등 비정상 응답은 즉시 오류로 전파하여 상위 재시도 경로(with_rate_limit_retry)로 진입
+                        let missing_output1 = out
+                            .output1()
+                            .as_ref()
+                            .map(|v| v.is_empty())
+                            .unwrap_or(true);
+                        if out.rt_cd() != "0" || missing_output1 {
+                            return Err(StockrsError::api(format!(
+                                "KIS 주문체결 조회 오류: rt_cd={}, msg_cd={}, msg1={}",
+                                out.rt_cd(),
+                                out.msg_cd(),
+                                out.msg1()
+                            )));
+                        }
                         Ok(out)
                     },
                 )
                 .await?;
-
-            // KIS 응답 상태 코드 검증 (비정상 응답은 요청/응답 본문 함께 출력 후 오류 처리)
-            if result.rt_cd() != "0" {
-                println!(
-                    "❌ [KoreaApi:{}] 주문 체결 상세 조회 요청: {}",
-                    self.mode_name(),
-                    req_debug
-                );
-                println!(
-                    "❌ [KoreaApi:{}] 응답 요약: rt_cd={}, msg_cd={}, msg1={}",
-                    self.mode_name(),
-                    result.rt_cd(),
-                    result.msg_cd(),
-                    result.msg1()
-                );
-                // 가능하다면 핵심 필드 스냅샷도 함께 출력
-                println!(
-                    "❌ [KoreaApi:{}] output1 존재 여부: {}",
-                    self.mode_name(),
-                    result.output1().is_some()
-                );
-                return Err(StockrsError::api(format!(
-                    "KIS 주문체결 조회 오류: rt_cd={}, msg_cd={}, msg1={}",
-                    result.rt_cd(),
-                    result.msg_cd(),
-                    result.msg1()
-                )));
-            }
 
             // 핵심 출력(output1) 누락 시 요청/응답 본문 출력 후 오류 처리
             let output1 = match result.output1().as_ref() {
@@ -963,8 +1022,28 @@ impl KoreaApi {
                 };
                 Ok(Some(info))
             } else {
-                // 디버그용 응답 내용 출력
-                println!("주문 체결 상세 조회 결과: {:?}", output1);
+                // 응답은 정상이나 주문번호가 아직 반영되지 않은 경우: 요청/응답 요약과 일부 샘플을 함께 출력
+                println!(
+                    "ℹ️ [KoreaApi:{}] 주문 체결 상세 조회 요청: {}",
+                    self.mode_name(),
+                    req_debug
+                );
+                println!(
+                    "ℹ️ [KoreaApi:{}] 응답 요약: rt_cd={}, msg_cd={}, msg1={}, rows={}",
+                    self.mode_name(),
+                    result.rt_cd(),
+                    result.msg_cd(),
+                    result.msg1(),
+                    output1.len()
+                );
+                // 최대 3개 행만 요약 출력
+                for (idx, row) in output1.iter().take(3).enumerate() {
+                    println!(
+                        "   ├─[{}] odno:{} pdno:{} ord_qty:{} tot_ccld_qty:{} rmn_qty:{} ord_unpr:{} avg_prvs:{}",
+                        idx,
+                        row.odno(), row.pdno(), row.ord_qty(), row.tot_ccld_qty(), row.rmn_qty(), row.ord_unpr(), row.avg_prvs()
+                    );
+                }
 
                 Ok(None)
             }

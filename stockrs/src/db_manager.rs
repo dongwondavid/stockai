@@ -196,8 +196,10 @@ impl DBManager {
         })?;
 
         let asset = result.get_asset();
+        let available_amount = result.get_available_amount();
+        let securities_value = result.get_securities_value();
         let date_str = current_date.to_string();
-        debug!("💰 [DBManager::insert_overview] 현재 자산: {:.0}원", asset);
+        debug!("💰 [DBManager::insert_overview] 현재 자산: {:.0}원 (주문가능: {:.0}원, 유가증권: {:.0}원)", asset, available_amount, securities_value);
 
         // Check if today's data already exists
         let existing_count: i64 = self.conn.query_row(
@@ -249,7 +251,9 @@ impl DBManager {
         })?;
 
         let asset = result.get_asset();
-        debug!("💰 [DBManager::update_overview] 현재 자산: {:.0}원", asset);
+        let available_amount = result.get_available_amount();
+        let securities_value = result.get_securities_value();
+        debug!("💰 [DBManager::update_overview] 현재 자산: {:.0}원 (주문가능: {:.0}원, 유가증권: {:.0}원)", asset, available_amount, securities_value);
 
         // 먼저 해당 날짜의 overview 데이터가 존재하는지 확인
         let date_str = current_date.to_string();
@@ -338,8 +342,10 @@ impl DBManager {
         })?;
 
         let asset = result.get_asset();
+        let available_amount = result.get_available_amount();
+        let securities_value = result.get_securities_value();
         let date_str = current_date.to_string();
-        debug!("💰 [DBManager::finish_overview] 현재 자산: {:.0}원", asset);
+        debug!("💰 [DBManager::finish_overview] 현재 자산: {:.0}원 (주문가능: {:.0}원, 유가증권: {:.0}원)", asset, available_amount, securities_value);
 
         let open: f64 = match self.conn.query_row(
             "SELECT open FROM overview WHERE date = ?",

@@ -255,6 +255,7 @@ pub mod Output {
         #[getset(get = "pub")]
         ord_dvsn_cd: String,
         #[getset(get = "pub")]
+        #[serde(alias = "cncl_cfrm_qty")]
         cnc_cfrm_qty: String,
         #[getset(get = "pub")]
         rmn_qty: String,
@@ -283,6 +284,7 @@ pub mod Output {
         #[getset(get = "pub")]
         rsvn_ord_end_dt: String,
         #[getset(get = "pub")]
+        #[serde(alias = "excg_id_dvsn_cd")]
         excg_id_dvsn_Cd: String,
         #[getset(get = "pub")]
         stpm_cndt_pric: String,
