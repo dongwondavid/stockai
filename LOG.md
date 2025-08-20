@@ -1,4 +1,10 @@
+2025-08-20T14:03: stockrs/src/runner.rs: 백테스트에서 새로운 거래일 리셋을 Overnight뿐 아니라 DataPrep 신호에서도 한 번만 실행되도록 확장
+2025-08-20T14:02: stockrs/src/time.rs: Overnight 신호 다음 상태를 DataPrep으로 수정하여 마지막 날짜 반복 출력 문제 방지
+2025-08-20T13:59: stockrs/src/model/joonwoo.rs: 강제 정리 로직 수정(동일시각 == 에서 도달/경과 >= 로 변경), force_close_time 오프셋 적용 제거
+2025-08-20T13:59: stockrs/src/runner.rs: 백테스트에서 DBManager 리셋 시간 포맷을 HH:MM:SS -> YYYYMMDDHHMM로 수정(분봉 DB 호환)
 # 📝 변경 이력 로그
+
+2025-08-20T23:10:12+09:00: config.example.toml, stockrs/src/utility/config.rs: 전역 손절 설정 제거 - 미사용 필드 `trading.stop_loss_ratio`와 해당 유효성 검증, 예시 설정 항목 삭제 (joonwoo 모델 전용 손절 설정만 유지)
 
 2025-08-13T13:26:00+09:00: stockrs/src/utility/apis/korea_api.rs: 레이트 리미트 전용 재시도 로직 도입 - EGW00201/초당 거래건수/429에만 지수 백오프(기본 1100ms)로 재시도, 타임아웃 및 기타 오류는 즉시 에러 전파. call_with_token_refresh는 새 래퍼를 사용하여 토큰 만료 시 재발급 후 1회 재시도 유지
 2025-08-13T13:33:25+09:00: stockrs/src/utility/apis/korea_api.rs: 주문/취소 응답 검증 강화 - rt_cd != "0" 또는 핵심 필드(output) 누락 시 에러로 간주하여 레이트리미트(EGW00201 등) 재시도 경로로 진입하도록 수정
@@ -284,7 +290,7 @@
 2024-12-19 15:30:00: stockrs/src/apis/db_api.rs: 백테스팅용 현재가 조회 로직을 1분봉 DB 사용하도록 수정 (get_current_price_from_db, get_current_price_from_db_latest 함수)
 2024-12-19 15:30:00: stockrs/src/runner.rs: 새로운 거래일 시작 시 날짜 로깅 추가 (📅 새로운 거래일 시작, 🔄 객체 리셋 시작, ✅ 리셋 완료)
 
-2025-07-20T05:50: data/market_close_day_2024.txt: 1월 2일 공휴일 제거 (실제로는 거래일이므로)
+2025-08-20T00:00: stockrs/src/runner.rs: 백테스트 end_date 장마감 시 정확 종료 처리 및 새 거래일 로그/리셋 중복 방지 가드 추가 (last_new_day_logged)
 2025-07-20T05:50: stockrs/src/time.rs: next_trading_day 함수에 디버깅 로그 추가하여 1월 3일, 1월 4일 건너뛰기 문제 진단
 2025-07-20T05:50: stockrs/src/time.rs: 디버깅 로그 제거 - 문제 해결 완료 (1월 2일이 잘못 공휴일로 등록되어 1월 3일, 1월 4일이 건너뛰어졌던 문제)
 2025-07-20T06:15: stockrs/src/runner.rs: wait_until_next_event에서 공휴일/주말 체크와 Overnight 신호 처리를 통합 (중복 skip_to_next_trading_day 호출 문제 해결)

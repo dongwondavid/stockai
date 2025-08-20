@@ -10,7 +10,7 @@ daily_db_path = "D:\\db\\stock_price(1day)_with_data.db"
 # 주식 가격 데이터베이스 경로 (1분봉)
 minute_db_path = "D:\\db\\stock_price(1min).db"
 # 거래 결과 저장용 데이터베이스
-trading_db_path = "stockrs/trading.db"
+trading_db_path = "eval/test_com.db"
 
 [onnx_model]
 # ONNX 모델 파일 경로
@@ -63,22 +63,20 @@ default_mode = "backtest"
 max_positions = 5
 # 포지션당 최대 금액 (원)
 max_position_amount = 10000000
-# 손절매 비율 (%)
-stop_loss_ratio = 3.0
 # 백테스팅 초기 자본금 (원)
 initial_capital = 10000000
 # ====== 실전/모의투자 거래 비용 설정 ======
 # 매수 시 수수료율 (%)
-real_buy_fee_rate = 0.015
+real_buy_fee_rate = 0.0142
 # 매도 시 수수료율 (%)
-real_sell_fee_rate = 0.015
+real_sell_fee_rate = 0.1642
 
 [backtest]
 # ====== 백테스팅 거래 비용 설정 ======
 # 매수 시 수수료율 (%)
-buy_fee_rate = 0.022
+buy_fee_rate = 0.0142
 # 매도 시 수수료율 (%)
-sell_fee_rate = 0.022
+sell_fee_rate = 0.1642
 # 매수 시 슬리피지율 (%)
 buy_slippage_rate = 0.5
 # 매도 시 슬리피지율 (%)
@@ -97,11 +95,11 @@ trailing_stop_pct = 0.5
 # 매수 시점 (24시간 형식)
 entry_time = "09:30:00"
 # 강제 정리 시점 (24시간 형식)
-force_close_time = "12:00:00"
+force_close_time = "15:00:00"
 # 매수 시 사용할 자산 비율 (%)
 entry_asset_ratio = 50
 # 고정 매수 금액 (원) - 0이면 비율 기반 매수만 사용
-fixed_entry_amount = 5000000
+fixed_entry_amount = 0
 
 [time_management]
 # trading_dates.txt 파일 경로

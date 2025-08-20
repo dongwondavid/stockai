@@ -77,7 +77,6 @@ pub struct TradingConfig {
     pub default_mode: String,
     pub max_positions: u32,
     pub max_position_amount: u64,
-    pub stop_loss_ratio: f64,
     pub initial_capital: f64,
     pub real_buy_fee_rate: f64,
     pub real_sell_fee_rate: f64,
@@ -324,13 +323,6 @@ impl Config {
                     "default_mode는 'real', 'paper', 'backtest' 중 하나여야 합니다".to_string(),
                 ))
             }
-        }
-
-        // 비율 검증
-        if self.trading.stop_loss_ratio <= 0.0 || self.trading.stop_loss_ratio > 100.0 {
-            return Err(ConfigError::ValidationError(
-                "stop_loss_ratio는 0~100 사이여야 합니다".to_string(),
-            ));
         }
 
         // 실전/모의투자 수수료율 검증

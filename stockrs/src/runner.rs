@@ -32,6 +32,9 @@ pub struct Runner {
 
     /// prototype.py의 self.stop_condition
     pub stop_condition: bool,
+
+    /// 같은 날짜에 여러 번 "새로운 거래일 시작" 로그/리셋이 실행되지 않도록 하기 위한 가드
+    last_new_day_logged: Option<chrono::NaiveDate>,
 }
 
 impl Runner {
@@ -73,6 +76,7 @@ impl Runner {
             db_manager: DBManager::new(db_path, api_config.db_manager_api)?,
             api_bundle: api_config.api_bundle,
             stop_condition: false,
+            last_new_day_logged: None,
         })
     }
 
@@ -329,44 +333,74 @@ impl Runner {
                 }
 
                 // println!("✅ [Runner] 당일 overview 마감 완료");
+
+                // 백테스팅: 종료일(end_date) 장 마감 시점에 정확히 종료하도록 처리
+                if let Ok(cfg) = config::get_config() {
+                    let end_date_str = &cfg.time_management.end_date;
+                    if end_date_str.len() == 8 {
+                        if let (Ok(year), Ok(month), Ok(day)) = (
+                            end_date_str[0..4].parse::<i32>(),
+                            end_date_str[4..6].parse::<u32>(),
+                            end_date_str[6..8].parse::<u32>(),
+                        ) {
+                            if let Some(end_date) = chrono::NaiveDate::from_ymd_opt(year, month, day) {
+                                let today = TimeService::global_now()?.date_naive();
+                                if today == end_date {
+                                    println!(
+                                        "🏁 [Runner] 백테스팅 종료: end_date({}) 장 마감 도달 - 종료",
+                                        end_date.format("%Y-%m-%d")
+                                    );
+                                    self.stop_condition = true;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
         // 현재 신호 확인 (전역 인스턴스에서)
         let current_signal = TimeService::global_now_signal()?;
 
-        // 백테스팅에서 새로운 거래일 시작 시 객체 리셋
-        if self.api_type == ApiType::Backtest && current_signal == TimeSignal::Overnight {
-            let next_date = TimeService::global_now()?.date_naive();
-            println!(
-                "📅 [Runner] 새로운 거래일 시작: {}",
-                next_date.format("%Y-%m-%d")
-            );
+        // 백테스팅에서 새로운 거래일 시작 시 객체 리셋 (Overnight 또는 DataPrep에서 처리)
+        if self.api_type == ApiType::Backtest && (current_signal == TimeSignal::Overnight || current_signal == TimeSignal::DataPrep) {
+            let today = TimeService::global_now()?.date_naive();
 
-            // 매일 새로운 거래일을 위해 모든 객체 리셋
-            if let Err(e) = self.model.reset_for_new_day() {
-                println!("❌ [Runner] 모델 리셋 실패: {}", e);
-                return Err(StockrsError::general(format!("모델 리셋 실패: {}", e)));
-            }
+            // 같은 날짜에 중복 실행 방지
+            if self.last_new_day_logged != Some(today) {
+                println!(
+                    "📅 [Runner] 새로운 거래일 시작: {}",
+                    today.format("%Y-%m-%d")
+                );
 
-            if let Err(e) = self.broker.reset_for_new_day() {
-                println!("❌ [Runner] 브로커 리셋 실패: {}", e);
-                return Err(StockrsError::general(format!("브로커 리셋 실패: {}", e)));
-            }
+                // 매일 새로운 거래일을 위해 모든 객체 리셋
+                if let Err(e) = self.model.reset_for_new_day() {
+                    println!("❌ [Runner] 모델 리셋 실패: {}", e);
+                    return Err(StockrsError::general(format!("모델 리셋 실패: {}", e)));
+                }
 
-            // 백테스팅 모드에서는 현재 시간을 전달
-            let current_time = if self.api_type == ApiType::Backtest {
-                Some(TimeService::global_now()?.format("%H:%M:%S").to_string())
-            } else {
-                None
-            };
+                if let Err(e) = self.broker.reset_for_new_day() {
+                    println!("❌ [Runner] 브로커 리셋 실패: {}", e);
+                    return Err(StockrsError::general(format!("브로커 리셋 실패: {}", e)));
+                }
 
-            if let Err(e) = self
-                .db_manager
-                .reset_for_new_day(TimeService::global_now()?.date_naive(), current_time)
-            {
-                println!("❌ [Runner] DB 매니저 리셋 실패: {}", e);
-                return Err(StockrsError::general(format!("DB 매니저 리셋 실패: {}", e)));
+                // 백테스팅 모드에서는 현재 시간을 YYYYMMDDHHMM 형식으로 전달 (분봉 DB 조회용)
+                let current_time = if self.api_type == ApiType::Backtest {
+                    Some(TimeService::global_format_ymdhm()?)
+                } else {
+                    None
+                };
+
+                if let Err(e) = self
+                    .db_manager
+                    .reset_for_new_day(TimeService::global_now()?.date_naive(), current_time)
+                {
+                    println!("❌ [Runner] DB 매니저 리셋 실패: {}", e);
+                    return Err(StockrsError::general(format!("DB 매니저 리셋 실패: {}", e)));
+                }
+
+                // 오늘 날짜에 대해 한 번만 로깅/리셋하도록 마킹
+                self.last_new_day_logged = Some(today);
             }
         }
 

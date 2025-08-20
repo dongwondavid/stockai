@@ -139,31 +139,8 @@ impl JoonwooModel {
 
     /// 전역 TimeService를 사용하는 강제 정리 시간 계산
     fn get_force_close_time_for_today_global(&self) -> Result<(u32, u32), Box<dyn Error>> {
-        let current_time = crate::time::TimeService::global_now()
-            .map_err(|e| format!("전역 TimeService 접근 실패: {}", e))?;
-        let current_date = current_time.date_naive();
-        
-        // 기본 강제 정리 시간 파싱
-        let (mut hour, mut minute) = self.parse_time_string(&self.force_close_time_str)?;
-        
-        // 전역 TimeService에서 특별한 날 체크
-        let global_time_service = crate::time::TimeService::get()
-            .map_err(|e| format!("전역 TimeService 접근 실패: {}", e))?;
-        let time_service_guard = global_time_service.lock()
-            .map_err(|e| format!("TimeService 뮤텍스 락 실패: {}", e))?;
-        
-        if let Some(time_service) = time_service_guard.as_ref() {
-            if time_service.is_special_start_date(current_date) {
-                let offset = time_service.special_start_time_offset_minutes;
-                let total_minutes = hour as i32 * 60 + minute as i32 + offset;
-                if total_minutes < 0 || total_minutes >= 24 * 60 {
-                    return Err(format!("force_close_time 오프셋 적용 결과가 0~24시 범위를 벗어남: {}분", total_minutes).into());
-                }
-                hour = (total_minutes / 60) as u32;
-                minute = (total_minutes % 60) as u32;
-            }
-        }
-        
+        // 강제 정리 시간은 특별 시작 오프셋의 영향을 받지 않습니다
+        let (hour, minute) = self.parse_time_string(&self.force_close_time_str)?;
         Ok((hour, minute))
     }
 
@@ -320,9 +297,15 @@ impl JoonwooModel {
 
         // 설정된 강제 정리 시간 확인
         let (force_close_hour, force_close_minute) = self.get_force_close_time_for_today_global()?;
-        if current_time.hour() != force_close_hour || current_time.minute() != force_close_minute {
-            debug!("강제 정리 시간이 아닙니다: {}:{} (설정: {}:{:02})", 
-                current_time.hour(), current_time.minute(), force_close_hour, force_close_minute);
+        // 강제 정리 시각에 도달했거나 지난 경우에도 즉시 정리
+        let now_h = current_time.hour();
+        let now_m = current_time.minute();
+        let is_before_force_close = now_h < force_close_hour || (now_h == force_close_hour && now_m < force_close_minute);
+        if is_before_force_close {
+            debug!(
+                "강제 정리 시간 전: {}:{} (설정: {}:{:02})",
+                now_h, now_m, force_close_hour, force_close_minute
+            );
             return Ok(None);
         }
 
@@ -496,9 +479,9 @@ impl Model for JoonwooModel {
                 debug!("⏰ [joonwoo] 매수 타이밍 (설정: {}:{:02})", h, m);
                 self.try_entry_global(apis)
             }
-            // 설정된 강제 정리 시간
-            (h, m) if h == force_close_hour && m == force_close_minute => {
-                debug!("⏰ [joonwoo] 강제 정리 타이밍 (설정: {}:{:02})", h, m);
+            // 설정된 강제 정리 시간 이상
+            (h, m) if (h > force_close_hour) || (h == force_close_hour && m >= force_close_minute) => {
+                debug!("⏰ [joonwoo] 강제 정리 타이밍 도달/경과 (설정: {}:{:02})", force_close_hour, force_close_minute);
                 self.force_close_all_global(apis)
             }
             // 일반 시간대 조건 체크 (매수 시간 ~ 강제 정리 시간)

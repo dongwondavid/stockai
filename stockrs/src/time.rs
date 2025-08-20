@@ -414,9 +414,9 @@ impl TimeService {
         } else if self.current < close_time {
             (close_time, TimeSignal::MarketClose)
         } else {
-            // self가 &self이므로 임시로 TradingCalender를 생성하여 사용
+            // 다음 거래일 08:30은 데이터 준비 시간(DataPrep)으로 진입해야 함
             let next_date = TradingCalender::default().next_trading_day(today);
-            (local_time!(next_date, 8, 30, 0), TimeSignal::Overnight)
+            (local_time!(next_date, 8, 30, 0), TimeSignal::DataPrep)
         };
         
         Ok(result)
