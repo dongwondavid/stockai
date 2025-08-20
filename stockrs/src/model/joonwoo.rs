@@ -217,12 +217,25 @@ impl JoonwooModel {
         };
 
         // 현재가 조회 (모드별 자동 선택)
-        let current_price = apis
-            .get_current_price(&target_stock)
-            .map_err(|e| {
+        let current_price = match apis.get_current_price(&target_stock) {
+            Ok(p) => p,
+            Err(e) => {
+                // 백테스트에서 1분봉 데이터가 없을 때 건너뛰기 옵션 처리
+                if apis.is_backtest_mode() {
+                    if let Ok(cfg) = get_config() {
+                        if cfg.backtest.skip_missing_price_as_unavailable {
+                            let msg = e.to_string();
+                            if msg.contains("해당 종목의 데이터가 1분봉 DB에 존재하지 않습니다") {
+                                info!("⚠️ [joonwoo] 가격 데이터 없음 - 종목 {} 틱 스킵", target_stock);
+                                return Ok(None);
+                            }
+                        }
+                    }
+                }
                 println!("❌ [joonwoo] 현재가 조회 실패: {}", e);
-                Box::new(e) as Box<dyn Error>
-            })?;
+                return Err(Box::new(e) as Box<dyn Error>);
+            }
+        };
 
         // 잔고 조회
         let balance_info = apis
@@ -314,12 +327,24 @@ impl JoonwooModel {
         }
 
         // 현재가 조회
-        let current_price = apis
-            .get_current_price(self.current_stock.as_ref().unwrap())
-            .map_err(|e| {
+        let current_price = match apis.get_current_price(self.current_stock.as_ref().unwrap()) {
+            Ok(p) => p,
+            Err(e) => {
+                if apis.is_backtest_mode() {
+                    if let Ok(cfg) = get_config() {
+                        if cfg.backtest.skip_missing_price_as_unavailable {
+                            let msg = e.to_string();
+                            if msg.contains("해당 종목의 데이터가 1분봉 DB에 존재하지 않습니다") {
+                                info!("⚠️ [joonwoo] 가격 데이터 없음 - 틱 스킵");
+                                return Ok(None);
+                            }
+                        }
+                    }
+                }
                 println!("❌ [joonwoo] 현재가 조회 실패: {}", e);
-                Box::new(e) as Box<dyn Error>
-            })?;
+                return Err(Box::new(e) as Box<dyn Error>);
+            }
+        };
 
         // 강제 정리 주문 생성
         let order = self.create_sell_all_order_global(current_price, "force_close")?;
@@ -342,12 +367,24 @@ impl JoonwooModel {
             return Ok(None);
         }
 
-        let current_price = apis
-            .get_current_price(self.current_stock.as_ref().unwrap())
-            .map_err(|e| {
+        let current_price = match apis.get_current_price(self.current_stock.as_ref().unwrap()) {
+            Ok(p) => p,
+            Err(e) => {
+                if apis.is_backtest_mode() {
+                    if let Ok(cfg) = get_config() {
+                        if cfg.backtest.skip_missing_price_as_unavailable {
+                            let msg = e.to_string();
+                            if msg.contains("해당 종목의 데이터가 1분봉 DB에 존재하지 않습니다") {
+                                info!("⚠️ [joonwoo] 가격 데이터 없음 - 틱 스킵");
+                                return Ok(None);
+                            }
+                        }
+                    }
+                }
                 println!("❌ [joonwoo] 현재가 조회 실패: {}", e);
-                Box::new(e) as Box<dyn Error>
-            })?;
+                return Err(Box::new(e) as Box<dyn Error>);
+            }
+        };
 
         let price_change_pct = ((current_price - self.entry_price) / self.entry_price) * 100.0;
 

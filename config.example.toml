@@ -14,9 +14,9 @@ trading_db_path = "stockrs/trading.db"
 
 [onnx_model]
 # ONNX 모델 파일 경로
-model_file_path = "data/zero.onnx"
+model_file_path = "data/first.onnx"
 # 특징 리스트 파일
-features_file_path = "data/features.txt"
+features_file_path = "data/features_first.txt"
 # 포함할 종목 리스트
 included_stocks_file_path = "data/stocks.txt"
 
@@ -62,7 +62,7 @@ default_mode = "backtest"
 # 최대 포지션 수
 max_positions = 5
 # 포지션당 최대 금액 (원)
-max_position_amount = 1000000
+max_position_amount = 10000000
 # 손절매 비율 (%)
 stop_loss_ratio = 3.0
 # 백테스팅 초기 자본금 (원)
@@ -83,13 +83,15 @@ sell_fee_rate = 0.022
 buy_slippage_rate = 0.5
 # 매도 시 슬리피지율 (%)
 sell_slippage_rate = 0.5
+# 가격 데이터 없음(1분봉 미존재) 시 에러 대신 '확인 불가'로 간주하고 해당 틱을 건너뜀
+skip_missing_price_as_unavailable = true
 
 [joonwoo]
 # ====== Joonwoo 모델 전용 설정 ======
 # 손절매 비율 (%)
-stop_loss_pct = 1.5
+stop_loss_pct = 5
 # 익절매 비율 (%)
-take_profit_pct = 1.5
+take_profit_pct = 10
 # 추가 손절매 비율 (절반 매도 후 트레일링 스탑) (%)
 trailing_stop_pct = 0.5
 # 매수 시점 (24시간 형식)
@@ -146,6 +148,8 @@ market_close_time = "15:30:00"
 [logging]
 # 로그 레벨 (error, warn, info, debug, trace)
 level = "info"
+# 백테스팅에서 "다음 이벤트" 로그 출력 여부 (true/false)
+show_backtest_next_event = false
 
 [token_management]
 # ====== OAuth 토큰 관리 설정 ======

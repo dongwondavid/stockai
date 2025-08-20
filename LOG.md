@@ -422,3 +422,6 @@
 
 2025-01-27T18:00: stockrs/src/utility/apis/korea_api.rs: 총평가금액 검증 로직 제거 - 주문가능금액과 유가증권평가금액의 단순 합계가 총평가금액과 다를 수 있음을 반영, 각 필드를 독립적으로 사용하도록 수정
 2025-01-27T18:00: stockrs/src/utility/types/trading.rs: AssetInfo 구조체에 total_asset 필드 추가 - API에서 제공하는 총평가금액을 별도로 저장, new_with_api_total 생성자 추가하여 API 총평가금액을 정확히 반영
+
+2025-08-20T21:16:17+09:00: config.example.toml, stockrs/src/utility/config.rs, stockrs/src/time.rs: 백테스팅 다음 이벤트 로그 출력 토글 추가 - [logging].show_backtest_next_event 설정 도입 및 time.rs에서 해당 로그 출력 on/off 반영
+2025-08-20T21:30:16+09:00: config.example.toml, stockrs/src/utility/config.rs, stockrs/src/model/joonwoo.rs: 1분봉 가격 데이터 미존재 시 에러 대신 틱 스킵하는 백테스트 옵션 추가 - backtest.skip_missing_price_as_unavailable 도입 및 joonwoo 모델에서 에러 메시지 패턴 감지 후 None 반환 처리

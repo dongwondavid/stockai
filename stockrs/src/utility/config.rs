@@ -3,6 +3,8 @@ use std::fs;
 use std::path::Path;
 use thiserror::Error;
 
+fn default_true() -> bool { true }
+
 #[derive(Error, Debug)]
 pub enum ConfigError {
     #[error("설정 파일을 찾을 수 없습니다: {0}")]
@@ -87,6 +89,8 @@ pub struct BacktestConfig {
     pub sell_fee_rate: f64,
     pub buy_slippage_rate: f64,
     pub sell_slippage_rate: f64,
+    #[serde(default = "default_true")]
+    pub skip_missing_price_as_unavailable: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -135,6 +139,8 @@ pub struct MarketHoursConfig {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct LoggingConfig {
     pub level: String,
+    #[serde(default = "default_true")]
+    pub show_backtest_next_event: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

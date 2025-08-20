@@ -620,11 +620,16 @@ impl TimeService {
                 // 백테스팅: 현재 시간을 다음 이벤트로 업데이트
                 self.update()?;
                 
-                println!(
-                    "⏰ [Time] 백테스팅 다음 이벤트 - 시간: {}, 신호: {:?}",
-                    self.current.format("%Y-%m-%d %H:%M:%S"),
-                    self.current_signal
-                );
+                // 설정에 따라 백테스팅 다음 이벤트 로그 출력 on/off
+                if let Ok(cfg) = config::get_config() {
+                    if cfg.logging.show_backtest_next_event {
+                        println!(
+                            "⏰ [Time] 백테스팅 다음 이벤트 - 시간: {}, 신호: {:?}",
+                            self.current.format("%Y-%m-%d %H:%M:%S"),
+                            self.current_signal
+                        );
+                    }
+                }
                 
                 Ok(())
             }

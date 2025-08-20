@@ -1,0 +1,7 @@
+day3_morning_volume_ratio
+day4_pos_vs_high_10d
+day2_prev_day_range_ratio
+day3_breaks_6month_high
+day3_morning_mdd
+day3_breaks_6month_high_with_long_candle
+day1_long_candle_ratio
