@@ -48,7 +48,8 @@ impl ONNXPredictor {
         let model_file_path = &config.onnx_model.model_file_path;
         let included_stocks_path = &config.onnx_model.included_stocks_file_path;
         let features_path = &config.onnx_model.features_file_path;
-        let trading_dates_path = &config.time_management.trading_dates_file_path;
+        // 특징 계산에 사용하는 거래일 파일은 온nx 모델 섹션의 별도 경로를 사용
+        let trading_dates_path = &config.onnx_model.features_trading_dates_file_path;
 
         // ONNX Runtime 환경 초기화
         let environment = Arc::new(
@@ -130,8 +131,13 @@ impl ONNXPredictor {
         let top_stocks = match self.trading_mode {
             TradingMode::Real | TradingMode::Paper => {
                 // 실전/모의투자: 정보 API로 실시간 거래대금 순위 조회
+                // KIS 응답은 접두사 'A'가 없는 단축코드이므로, 이후 로직(stocks.txt 비교, DB 조회)의 일관성을 위해 'A' 접두사를 부여
                 let korea_api = KoreaApi::new_info()?;
-                korea_api.get_top_amount_stocks(30)?
+                let codes = korea_api.get_top_amount_stocks(30)?;
+                codes
+                    .into_iter()
+                    .map(|c| if c.starts_with('A') { c } else { format!("A{}", c) })
+                    .collect::<Vec<String>>()
             }
             TradingMode::Backtest => {
                 // 백테스팅: DB에서 과거 데이터로 거래대금 계산
@@ -157,10 +163,10 @@ impl ONNXPredictor {
             ));
         }
 
-        // 필터링 후 15개 초과로 개수가 남았다면 순위대로 15개만 남겨서 사용
-        let final_stocks = if filtered_stocks.len() > 15 {
-            debug!("필터링된 종목이 15개 초과 ({}개) - 상위 15개만 사용", filtered_stocks.len());
-            filtered_stocks.into_iter().take(15).collect::<Vec<String>>()
+        // 필터링 후 10개 초과로 개수가 남았다면 순위대로 10개만 남겨서 사용
+        let final_stocks = if filtered_stocks.len() > 10 {
+            debug!("필터링된 종목이 10개 초과 ({}개) - 상위 10개만 사용", filtered_stocks.len());
+            filtered_stocks.into_iter().take(10).collect::<Vec<String>>()
         } else {
             filtered_stocks
         };
@@ -275,6 +281,8 @@ impl ONNXPredictor {
                 })
                 .collect();
 
+            // println!("{:?}", input_vec);
+
             // 2. ndarray 배열로 변환 (배치 1개, 특성 수만큼)
             let input_array = Array2::from_shape_vec((1, input_vec.len()), input_vec)
                 .map_err(|e| StockrsError::prediction(format!("입력 배열 생성 실패: {}", e)))?;
@@ -327,6 +335,9 @@ impl ONNXPredictor {
                 );
                 continue;
             }
+
+            // println!("predicted_class: {}", predicted_class);
+            // println!("outputs: {:?}", outputs);
 
             // 6. 두 번째 출력에서 확률 추출
             let output_value = &outputs[1];

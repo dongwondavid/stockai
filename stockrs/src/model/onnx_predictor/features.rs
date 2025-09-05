@@ -6,7 +6,7 @@ pub mod utils;
 
 use crate::utility::errors::StockrsResult;
 use rusqlite::Connection;
-use tracing::{warn, info};
+use tracing::info;
 
 // 재수출
 pub use utils::*;
@@ -42,15 +42,18 @@ pub fn calculate_features_for_stock_optimized(
             "day4_macd_histogram" => {
                 day4::calculate_macd_histogram(db, stock_code, date)?
             }
+            "day4_bollinger_band_width" => {
+                day4::calculate_bollinger_band_width(db, stock_code, date)?
+            }
             "day4_pos_vs_high_5d" => {
-                day4::calculate_pos_vs_high_5d(daily_db, stock_code, date)?
+                day4::calculate_pos_vs_high_5d(db, daily_db, stock_code, date)?
             }
             "day4_rsi_value" => day4::calculate_rsi_value(db, stock_code, date)?,
             "day4_pos_vs_high_3d" => {
-                day4::calculate_pos_vs_high_3d(daily_db, stock_code, date)?
+                day4::calculate_pos_vs_high_3d(db, daily_db, stock_code, date)?
             }
             "day4_pos_vs_high_10d" => {
-                day4::calculate_pos_vs_high_10d(daily_db, stock_code, date)?
+                day4::calculate_pos_vs_high_10d(db, daily_db, stock_code, date)?
             }
 
             // day1 관련 특징들
@@ -91,7 +94,7 @@ pub fn calculate_features_for_stock_optimized(
                 day3::calculate_breaks_6month_high(daily_db, stock_code, date, trading_dates)?
             }
             "day3_morning_volume_ratio" => {
-                day3::calculate_morning_volume_ratio(db, daily_db, stock_code, date)?
+                day3::calculate_morning_volume_ratio(db, daily_db, stock_code, date, trading_dates)?
             }
 
             // day2 관련 특징들
@@ -110,7 +113,7 @@ pub fn calculate_features_for_stock_optimized(
             }
 
             _ => {
-                warn!("⚠️ [Features] 알 수 없는 특징: {} (종목: {})", feature, stock_code);
+                println!("⚠️ [Features] 알 수 없는 특징: {} (종목: {})", feature, stock_code);
                 0.0
             }
         };

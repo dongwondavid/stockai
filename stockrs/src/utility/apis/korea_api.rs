@@ -121,6 +121,152 @@ where
 }
 
 impl KoreaApi {
+    /// 주식 당일 1분 데이터를 조회하여 5분봉(09:01~09:30, 특이일은 10:01~10:30)으로 집계
+    /// 실전/모의/정보 모드 모두 사용 가능 (읽기 전용)
+    pub fn get_morning_5min_ohlcv(&self, stockcode: &str, date: &str) -> StockrsResult<(Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>)> {
+        use std::collections::{BTreeMap, HashSet};
+
+        // HHMMSS 범위 결정 (특이일 지원)
+        let end_hhmmss = {
+            let cfg = config::get_config()?;
+            let special_path = &cfg.time_management.special_start_dates_file_path;
+            let mut is_special = false;
+            if let Ok(content) = std::fs::read_to_string(special_path) {
+                for line in content.lines() {
+                    if line.trim() == date { is_special = true; break; }
+                }
+            }
+            if is_special { "103000".to_string() } else { "093000".to_string() }
+        };
+
+        // 종목코드 정규화 (API는 'A' 접두사 없이 6자리 단축코드 사용)
+        let clean_code = if stockcode.starts_with('A') { &stockcode[1..] } else { stockcode };
+
+        let rt = tokio::runtime::Runtime::new()?;
+        let (rows, meta_ok) = rt.block_on(async {
+            self.call_with_token_refresh(
+                "당일분봉조회",
+                || async {
+                    let api = { self.api.borrow().clone() };
+                    let params = korea_investment_api::types::request::stock::quote::MinutePriceChartParameter::new(
+                        "J",
+                        clean_code,
+                        &end_hhmmss,
+                        false,
+                        "",
+                    );
+                    let out = api
+                        .quote
+                        .minute_price_chart(params)
+                        .await
+                        .map_err(StockrsError::from)?;
+
+                    let has_output2 = out.output2().is_some();
+                    if out.rt_cd() != "0" || !has_output2 {
+                        return Err(StockrsError::api(format!(
+                            "KIS 당일분봉 조회 오류: rt_cd={}, msg_cd={}, msg1={}",
+                            out.rt_cd(),
+                            out.msg_cd(),
+                            out.msg1()
+                        )));
+                    }
+
+                    let meta_ok = out.output1().is_some();
+                    let rows = out
+                        .output2()
+                        .as_ref()
+                        .cloned()
+                        .unwrap_or_default();
+                    Ok((rows, meta_ok))
+                },
+            ).await
+        })?;
+
+        if !meta_ok { println!("⚠️ [KoreaApi:{}] 분봉 메타데이터(output1) 누락", self.mode_name()); }
+
+        // 필요한 시작/종료 구간 계산 (특이일 지원)
+        // 요구사항: 항상 09:01~09:30 또는 10:01~10:30 구간만 사용
+        let (start_hhmmss, end_hhmmss) = if end_hhmmss.starts_with("10") { ("100100", "103000") } else { ("090100", "093000") };
+
+        #[derive(Default, Clone)]
+        struct Bucket { open: Option<f64>, high: f64, low: f64, close: Option<f64>, volume: f64 }
+
+        let mut buckets: BTreeMap<String, Bucket> = BTreeMap::new();
+        let mut seen_minute: HashSet<(String, String)> = HashSet::new();
+        let mut bucket_times: BTreeMap<String, std::collections::BTreeSet<String>> = BTreeMap::new();
+
+        for row in rows.iter() {
+            if row.stck_bsop_date() != date { continue; }
+            let t = row.stck_cntg_hour(); // &String (HHMMSS)
+            let ts = t.as_str();
+            if ts < start_hhmmss || ts > end_hhmmss { continue; }
+
+            // 동일 분(YYYYMMDD+HHMMSS) 중복 방지
+            let minute_key = (row.stck_bsop_date().to_string(), ts.to_string());
+            if !seen_minute.insert(minute_key) { continue; }
+
+            // 버킷 키 계산: 고정 구간 (01~05, 06~10, 11~15, 16~20, 21~25, 26~30)
+            if ts.len() < 6 { continue; }
+            let hh: &str = &ts[0..2];
+            let mm: usize = ts[2..4].parse().unwrap_or(0);
+            let mm_start = match mm {
+                1..=5 => 1,
+                6..=10 => 6,
+                11..=15 => 11,
+                16..=20 => 16,
+                21..=25 => 21,
+                26..=30 => 26,
+                _ => { continue; } // 00 또는 31 이상은 제외
+            };
+            let key = format!("{}{:02}", hh, mm_start);
+
+            let mut b = buckets.get(&key).cloned().unwrap_or_default();
+
+            let op = row.stck_oprc().trim().parse::<f64>().map_err(|e| StockrsError::Parsing { data_type: format!("시가({})", key), reason: e.to_string() })?;
+            let hg = row.stck_hgpr().trim().parse::<f64>().map_err(|e| StockrsError::Parsing { data_type: format!("고가({})", key), reason: e.to_string() })?;
+            let lw = row.stck_lwpr().trim().parse::<f64>().map_err(|e| StockrsError::Parsing { data_type: format!("저가({})", key), reason: e.to_string() })?;
+            let cp = row.stck_prpr().trim().parse::<f64>().map_err(|e| StockrsError::Parsing { data_type: format!("종가({})", key), reason: e.to_string() })?;
+            let vol = row.cntg_vol().trim().replace(",", "").parse::<f64>().map_err(|e| StockrsError::Parsing { data_type: format!("거래량({})", key), reason: e.to_string() })?;
+
+            if b.open.is_none() { b.open = Some(op); }
+            if b.close.is_none() { b.close = Some(cp); } else { b.close = Some(cp); }
+            if b.high == 0.0 { b.high = hg; } else { b.high = b.high.max(hg); }
+            if b.low == 0.0 { b.low = lw; } else { b.low = b.low.min(lw); }
+            b.volume += vol;
+            bucket_times.entry(key.clone()).or_default().insert(ts.to_string());
+            buckets.insert(key, b);
+        }
+
+        for (k, time_set) in bucket_times.iter() {
+            println!("[KoreaApi] 5분 bucket {} 포함된 시간: {:?}", k, time_set);
+        }
+
+        // 결과 벡터 구성: 키 오름차순 (시간순)
+        let mut opens = Vec::new();
+        let mut highs = Vec::new();
+        let mut lows = Vec::new();
+        let mut closes = Vec::new();
+        let mut volumes = Vec::new();
+
+        for (_k, b) in buckets.iter() {
+            let open = b.open.ok_or_else(|| StockrsError::general("5분 버킷 시가 누락".to_string()))?;
+            let close = b.close.ok_or_else(|| StockrsError::general("5분 버킷 종가 누락".to_string()))?;
+            opens.push(open);
+            highs.push(b.high);
+            lows.push(b.low);
+            closes.push(close);
+            volumes.push(b.volume);
+        }
+
+        if opens.is_empty() {
+            return Err(StockrsError::general(format!(
+                "분봉 데이터가 비어있습니다: {} {} ({}~{})",
+                clean_code, date, start_hhmmss, end_hhmmss
+            )));
+        }
+
+        Ok((closes, opens, highs, lows, volumes))
+    }
     /// KIS 오류 메시지에서 토큰 만료 여부를 판단
     fn is_token_expired_message(message: &str) -> bool {
         let m = message;
@@ -818,10 +964,95 @@ impl StockApi for KoreaApi {
 
 impl KoreaApi {
     /// 거래대금 순위 상위 종목 조회 (실전/모의 투자용)
-    pub fn get_top_amount_stocks(&self, _limit: usize) -> StockrsResult<Vec<String>> {
-        Err(StockrsError::UnsupportedFeature {
-            feature: "거래대금 순위 상위 종목 조회".to_string(),
-            phase: "실시간/모의투자 모드".to_string(),
+    pub fn get_top_amount_stocks(&self, limit: usize) -> StockrsResult<Vec<String>> {
+        let rt = tokio::runtime::Runtime::new()?;
+
+        rt.block_on(async {
+            // 한국투자 시세 API의 거래량순위 엔드포인트를 거래대금 기준으로 설정하여 사용
+            let result = self
+                .call_with_token_refresh(
+                    "거래대금 순위 조회",
+                    || async {
+                        let api = { self.api.borrow().clone() };
+                        let params = korea_investment_api::types::request::stock::quote::VolumeRankParameter::new(
+                            "0000".to_string(), // 전체 시장
+                            korea_investment_api::types::ShareClassCode::Whole,
+                            korea_investment_api::types::BelongClassCode::Amount, // 거래금액순
+                            korea_investment_api::types::TargetClassCode {
+                                margin_30: false,
+                                margin_40: false,
+                                margin_50: false,
+                                margin_60: false,
+                                margin_100: false,
+                                credit_30: false,
+                                credit_40: false,
+                                credit_50: false,
+                                credit_60: false,
+                            },
+                            korea_investment_api::types::TargetExeceptClassCode {
+                                overheat: false,
+                                administrated: false,
+                                settlement_trading: false,
+                                insufficient_posting: false,
+                                preferred_share: false,
+                                suspended: false,
+                            },
+                            None,
+                            None,
+                            None,
+                        );
+
+                        let out = api
+                            .quote
+                            .volume_rank(params)
+                            .await
+                            .map_err(StockrsError::from)?;
+
+                        // 비정상 응답은 에러 처리하여 상위 재시도 경로로 진입
+                        let has_output = out.output().is_some();
+                        if out.rt_cd() != "0" || !has_output {
+                            return Err(StockrsError::api(format!(
+                                "KIS 거래대금 순위 조회 오류: rt_cd={}, msg_cd={}, msg1={}",
+                                out.rt_cd(),
+                                out.msg_cd(),
+                                out.msg1()
+                            )));
+                        }
+
+                        Ok(out)
+                    },
+                )
+                .await?;
+
+            let rows = out_put_list(&result)?;
+
+            // acml_tr_pbmn(누적 거래대금) 기준으로 내림차순 정렬 후 상위 limit 추출
+            let mut items: Vec<(String, f64)> = Vec::with_capacity(rows.len());
+            for row in rows.iter() {
+                let code = row.mksc_shrn_iscd().to_string();
+                let amt_str = row.acml_tr_pbmn();
+                let amt = amt_str.trim().parse::<f64>().map_err(|e| StockrsError::Parsing {
+                    data_type: "누적 거래대금".to_string(),
+                    reason: format!("'{}'를 숫자로 변환 실패: {}", amt_str, e),
+                })?;
+                items.push((code, amt));
+            }
+
+            items.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            let top_codes: Vec<String> = items
+                .into_iter()
+                .map(|(code, _)| code)
+                .take(limit)
+                .collect();
+
+            println!(
+                "🏆 [KoreaApi:{}] 거래대금 상위 {}종목: {}",
+                self.mode_name(),
+                top_codes.len(),
+                top_codes.join(", ")
+            );
+
+            Ok(top_codes)
         })
     }
 
@@ -1049,4 +1280,105 @@ impl KoreaApi {
             }
         })
     }
+}
+
+impl KoreaApi {
+    /// 당일 분봉 차트 조회 (시작 시간 기준, 과거 데이터 포함 여부 선택)
+    /// 반환: (date: YYYYMMDD, time: HHMMSS, close, open, high, low, volume, amount)
+    pub fn get_minute_price_chart(
+        &self,
+        stockcode: &str,
+        input_hour_hhmmss: &str,
+        include_past_data: bool,
+    ) -> StockrsResult<Vec<(String, String, f64, f64, f64, f64, f64, f64)>> {
+        let rt = tokio::runtime::Runtime::new()?;
+
+        rt.block_on(async {
+            let clean_stockcode: String = if stockcode.starts_with('A') {
+                stockcode[1..].to_string()
+            } else {
+                stockcode.to_string()
+            };
+
+            let result = self
+                .call_with_token_refresh(
+                    "당일 분봉 차트 조회",
+                    || async {
+                        let api = { self.api.borrow().clone() };
+                        let params = korea_investment_api::types::request::stock::quote::MinutePriceChartParameter::new(
+                            "J",                    // KRX
+                            &clean_stockcode,        // 종목코드(단축)
+                            input_hour_hhmmss,      // 시작 시각(HHMMSS)
+                            include_past_data,      // 과거 데이터 포함
+                            "0",                   // 기본 구분 코드
+                        );
+                        let out = api
+                            .quote
+                            .minute_price_chart(params)
+                            .await
+                            .map_err(StockrsError::from)?;
+
+                        // 응답 검증: rt_cd=='0' && output2(Some)
+                        let has_output2 = out.output2().is_some();
+                        if out.rt_cd() != "0" || !has_output2 {
+                            return Err(StockrsError::api(format!(
+                                "KIS 분봉 조회 오류: rt_cd={}, msg_cd={}, msg1={}",
+                                out.rt_cd(),
+                                out.msg_cd(),
+                                out.msg1()
+                            )));
+                        }
+                        Ok(out)
+                    },
+                )
+                .await?;
+
+            let output2 = result.output2().as_ref().ok_or_else(|| {
+                StockrsError::general("API 응답에서 분봉 데이터(output2)를 찾을 수 없음".to_string())
+            })?;
+
+            let mut rows: Vec<(String, String, f64, f64, f64, f64, f64, f64)> =
+                Vec::with_capacity(output2.len());
+            for r in output2.iter() {
+                let date = r.stck_bsop_date().to_string();
+                let time = r.stck_cntg_hour().to_string();
+                let close = r.stck_prpr().trim().parse::<f64>().map_err(|e| StockrsError::Parsing {
+                    data_type: "분봉:현재가".to_string(),
+                    reason: e.to_string(),
+                })?;
+                let open = r.stck_oprc().trim().parse::<f64>().map_err(|e| StockrsError::Parsing {
+                    data_type: "분봉:시가".to_string(),
+                    reason: e.to_string(),
+                })?;
+                let high = r.stck_hgpr().trim().parse::<f64>().map_err(|e| StockrsError::Parsing {
+                    data_type: "분봉:고가".to_string(),
+                    reason: e.to_string(),
+                })?;
+                let low = r.stck_lwpr().trim().parse::<f64>().map_err(|e| StockrsError::Parsing {
+                    data_type: "분봉:저가".to_string(),
+                    reason: e.to_string(),
+                })?;
+                let volume = r.cntg_vol().trim().parse::<f64>().map_err(|e| StockrsError::Parsing {
+                    data_type: "분봉:체결거래량".to_string(),
+                    reason: e.to_string(),
+                })?;
+                let amount = r.acml_tr_pbmn().trim().parse::<f64>().map_err(|e| StockrsError::Parsing {
+                    data_type: "분봉:누적거래대금".to_string(),
+                    reason: e.to_string(),
+                })?;
+
+                rows.push((date, time, close, open, high, low, volume, amount));
+            }
+
+            Ok(rows)
+        })
+    }
+}
+
+// 내부 헬퍼: VolumeRank 응답에서 핵심 리스트(output) 추출
+fn out_put_list<'a>(resp: &'a korea_investment_api::types::response::stock::quote::VolumeRankResponse) -> StockrsResult<&'a Vec<korea_investment_api::types::response::stock::quote::output::VolumeRank>> {
+    resp
+        .output()
+        .as_ref()
+        .ok_or_else(|| StockrsError::general("API 응답에서 거래대금 순위(output)를 찾을 수 없음".to_string()))
 }

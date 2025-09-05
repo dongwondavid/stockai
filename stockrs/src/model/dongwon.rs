@@ -3,8 +3,10 @@ use crate::time::TimeService;
 use crate::utility::config::get_config;
 use crate::utility::types::broker::{Order, OrderSide};
 use chrono::Timelike;
+use chrono::Local;
 use std::error::Error;
 use tracing::{debug, info, warn};
+use crate::utility::apis::KoreaApi;
 
 pub struct DongwonModel {
     stockcode: String,
@@ -119,6 +121,42 @@ impl Model for DongwonModel {
             "🚀 [dongwon] 시작 - 종목: {}, 매수: {}, 매도: {}, 수량: {}",
             self.stockcode, self.entry_time, self.exit_time, self.quantity
         );
+        // 시작 시점에 정보 API로 거래대금 상위 30종목 조회 및 출력
+        let api = KoreaApi::new_info()?;
+        // 모델 시작 시 오전 5분봉 집계 수행
+        let today = Local::now().format("%Y%m%d").to_string();
+        match api.get_morning_5min_ohlcv(&self.stockcode, &today) {
+            Ok((closes, _opens, _highs, _lows, _volumes)) => {
+                println!("closes: {:?}", closes);
+                println!(
+                    "[dongwon] {} {} 오전 5분봉 집계 완료: bars={}",
+                    self.stockcode,
+                    today,
+                    closes.len()
+                );
+            }
+            Err(e) => {
+                warn!("[dongwon] 오전 5분봉 집계 실패: {} {} - {}", self.stockcode, today, e);
+            }
+        }
+        let top = api.get_top_amount_stocks(30)?;
+        println!("[dongwon] 시작시 거래대금 상위 30: {}", top.join(", "));
+
+        // 최상위 종목의 분봉 중 '오늘' 데이터만 출력 (09:00:00부터, 과거 포함 조회 후 필터링)
+        if let Some(best) = top.first() {
+            let minutes = api.get_minute_price_chart(best, "090000", true)?;
+            let todays_minutes: Vec<_> = minutes
+                .into_iter()
+                .filter(|(d, _, _, _, _, _, _, _)| d == &today)
+                .collect();
+            println!("[dongwon] {} 분봉(오늘 {}개):", best, todays_minutes.len());
+            for (date, time, close, open, high, low, volume, amount) in todays_minutes.iter() {
+                println!(
+                    "  {} {} O:{:.0} H:{:.0} L:{:.0} C:{:.0} V:{:.0} A:{:.0}",
+                    date, time, open, high, low, close, volume, amount
+                );
+            }
+        }
         Ok(())
     }
 

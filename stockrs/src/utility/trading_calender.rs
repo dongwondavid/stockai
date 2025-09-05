@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use crate::utility::errors::{StockrsError, StockrsResult};
+use crate::utility::config::get_config;
 
 /// 거래 캘린더를 담당하는 구조체
 /// samsung_1min_dates.txt 파일에서 거래일 목록을 로드하여 관리
@@ -19,7 +20,9 @@ pub struct TradingCalender {
 impl TradingCalender {
     /// 새로운 TradingCalender 인스턴스를 생성합니다.
     pub fn new() -> StockrsResult<Self> {
-        let trading_dates_file_path = "data/samsung_1min_dates.txt".to_string();
+        // 시간 관리용 거래일 파일 경로를 설정에서 읽음
+        let cfg = get_config().map_err(|e| StockrsError::Time { operation: "설정 로드".to_string(), reason: e.to_string() })?;
+        let trading_dates_file_path = cfg.time_management.trading_dates_file_path.clone();
 
         let mut calender = TradingCalender {
             all_trading_days_set: None,

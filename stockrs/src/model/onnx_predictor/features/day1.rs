@@ -126,7 +126,7 @@ pub fn calculate_fourth_derivative(
         Ok(0.0)
     } else {
         let sign = if derivative > 0.0 { 1.0 } else { -1.0 };
-        Ok(sign * (1.0 + derivative.abs()).ln())
+        Ok(sign * (1.0_f64 + derivative.abs()).ln())
     }
 }
 
@@ -179,7 +179,7 @@ pub fn calculate_fifth_derivative(
         Ok(0.0)
     } else {
         let sign = if derivative > 0.0 { 1.0 } else { -1.0 };
-        Ok(sign * (1.0 + derivative.abs()).ln())
+        Ok(sign * (1.0_f64 + derivative.abs()).ln())
     }
 }
 
@@ -215,7 +215,7 @@ pub fn calculate_sixth_derivative(
         Ok(0.0)
     } else {
         let sign = if derivative > 0.0 { 1.0 } else { -1.0 };
-        Ok(sign * (1.0 + derivative.abs()).ln())
+        Ok(sign * (1.0_f64 + derivative.abs()).ln())
     }
 }
 

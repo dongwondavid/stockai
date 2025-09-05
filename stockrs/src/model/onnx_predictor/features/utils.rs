@@ -1,4 +1,6 @@
 use crate::utility::errors::{StockrsError, StockrsResult};
+use crate::utility::config;
+use crate::utility::apis::korea_api::KoreaApi;
 use rusqlite::Connection;
 use std::collections::HashSet;
 use std::fs::File;
@@ -170,6 +172,19 @@ pub fn get_morning_data(
     stock_code: &str,
     date: &str,
 ) -> StockrsResult<MorningData> {
+    // 실전/모의 모드에서는 KIS 시세 API를 통해 당일 1분 데이터를 받아 5분봉으로 집계
+    if let Ok(cfg) = config::get_config() {
+        match cfg.trading.default_mode.as_str() {
+            "real" | "paper" => {
+                // 정보용 실전 API 키를 사용해 조회 (시세용)
+                let api = KoreaApi::new_info()?;
+                let (closes, opens, highs, lows, volumes) = api.get_morning_5min_ohlcv(stock_code, date)?;
+                return Ok(MorningData { closes, opens, highs, lows, volumes });
+            }
+            _ => {}
+        }
+    }
+
     let table_name = stock_code.to_string();
     let (date_start, date_end) = get_time_range_for_date(date);
 
@@ -222,8 +237,10 @@ pub fn get_morning_data(
         table_name
     );
 
-    let mut stmt = db.prepare(&query)?;
-    let rows = stmt.query_map([&date_start, &date_end], |row| {
+    let mut stmt = db.prepare_cached(&query)?;
+    let start_i64 = date_start.parse::<i64>().unwrap();
+    let end_i64 = date_end.parse::<i64>().unwrap();
+    let rows = stmt.query_map([&start_i64, &end_i64], |row| {
         Ok((
             row.get::<_, i32>(0)?, // close
             row.get::<_, i32>(1)?, // open
@@ -325,8 +342,9 @@ pub fn get_daily_data(
     );
     info!("🔍 [get_daily_data] 데이터 조회 쿼리: '{}' (파라미터: date='{}')", query, date);
 
-    let mut stmt = daily_db.prepare(&query)?;
-    let rows = stmt.query_map([&date], |row| {
+    let mut stmt = daily_db.prepare_cached(&query)?;
+    let date_i32 = date.parse::<i32>().unwrap_or(0);
+    let rows = stmt.query_map([&date_i32], |row| {
         Ok((
             row.get::<_, i32>(0)?, // close
             row.get::<_, i32>(1)?, // open
@@ -404,11 +422,8 @@ pub fn get_previous_trading_day(day_dates: &[String], date: &str) -> StockrsResu
 
     // 이전 거래일 찾기
     if left > 0 {
-        let prev_date = day_dates[left - 1].clone();
-        info!("✅ [get_previous_trading_day] 전일 찾기 완료: {} -> {}", date, prev_date);
-        Ok(prev_date)
+        Ok(day_dates[left - 1].clone())
     } else {
-        warn!("❌ [get_previous_trading_day] 전일을 찾을 수 없습니다: {}", date);
         Err(StockrsError::prediction(format!(
             "이전 거래일을 찾을 수 없습니다: {}",
             date
@@ -436,61 +451,41 @@ pub fn is_special_trading_date(date: &str) -> bool {
 
 /// 첫 거래일인지 확인하는 함수
 pub fn is_first_trading_day(daily_db: &Connection, stock_code: &str, date: &str, day_dates: &[String]) -> StockrsResult<bool> {
-    use tracing::{info, warn};
-    info!("🔍 [is_first_trading_day] 첫 거래일 확인 중 (종목: {}, 날짜: {})", stock_code, date);
-    
-    // 빈 배열 체크
-    if day_dates.is_empty() {
-        warn!("❌ [is_first_trading_day] 거래일 배열이 비어있습니다");
-        return Err(StockrsError::prediction(format!(
-            "거래일 배열이 비어있습니다"
-        )));
-    }
-    
-    // 첫 번째 날짜인지 확인
-    if day_dates[0] == date {
-        info!("✅ [is_first_trading_day] 첫 번째 거래일이므로 첫 거래일로 판단: {}", date);
-        return Ok(true);
-    }
-    
     // 전 거래일 가져오기
-    let previous_date = get_previous_trading_day(day_dates, date)?;
-    info!("📅 [is_first_trading_day] 전 거래일: {} (종목: {})", previous_date, stock_code);
-    
-    // 전 거래일에 해당 종목 데이터가 있는지 확인
-    let table_name = stock_code;
-    let count_query = format!("SELECT COUNT(*) FROM \"{}\" WHERE date = ?", table_name);
-    info!("🔍 [is_first_trading_day] 데이터 확인 쿼리: '{}' (파라미터: date='{}')", count_query, previous_date);
-    
-    let count: i64 = daily_db
-        .query_row(
-            &count_query,
-            [&previous_date],
-            |row| row.get(0),
-        )
-        .map_err(|e| {
-            warn!("❌ [is_first_trading_day] 데이터 확인 쿼리 실패: {} (종목: {}, 테이블: {}, 전일: {})", e, stock_code, table_name, previous_date);
-            StockrsError::database_query(format!(
-                "종목 {}의 전 거래일 데이터 확인 실패",
-                table_name
-            ))
-        })?;
-    
-    info!("📊 [is_first_trading_day] 전 거래일 데이터 개수: {} (종목: {}, 전일: {})", count, stock_code, previous_date);
-    
-    // 전 거래일에 데이터가 없으면 첫 거래일
-    let is_first = count == 0;
-    info!("✅ [is_first_trading_day] 첫 거래일 여부: {} (종목: {}, 날짜: {})", is_first, stock_code, date);
-    Ok(is_first)
+    match get_previous_trading_day(day_dates, date) {
+        Ok(previous_date) => {
+            // 전 거래일에 해당 종목 데이터가 있는지 확인
+            let table_name = stock_code;
+            let count: i64 = daily_db
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM \"{}\" WHERE date = ?", table_name),
+                    [&previous_date],
+                    |row| row.get(0),
+                )
+                .map_err(|_| {
+                    StockrsError::database_query(format!(
+                        "종목 {}의 전 거래일 데이터 확인 실패",
+                        table_name
+                    ))
+                })?;
+            
+            // 전 거래일에 데이터가 없으면 첫 거래일
+            Ok(count == 0)
+        }
+        Err(_) => {
+            // 이전 거래일을 찾을 수 없으면 첫 번째 거래일
+            Ok(true)
+        }
+    }
 }
 
 /// 날짜에 따른 시간 범위를 반환하는 함수
 pub fn get_time_range_for_date(date: &str) -> (String, String) {
     if is_special_trading_date(date) {
-        // 특이한 날짜: 10:00~10:30
-        (format!("{}1000", date), format!("{}1030", date))
+        // 특이한 날짜: 10:05~10:30
+        (format!("{}1005", date), format!("{}1030", date))
     } else {
-        // 일반 날짜: 09:00~09:30
-        (format!("{}0900", date), format!("{}0930", date))
+        // 일반 날짜: 09:05~09:30 (실제 데이터는 09:05부터 시작)
+        (format!("{}0905", date), format!("{}0930", date))
     }
 }

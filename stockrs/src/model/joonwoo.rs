@@ -2,7 +2,6 @@ use crate::utility::config::get_config;
 use crate::model::{ApiBundle, Model, ONNXPredictor};
 use crate::time::TimeService;
 use crate::utility::types::broker::{Order, OrderSide};
-use crate::utility::types::trading::TradingMode;
 use chrono::{NaiveDateTime, Timelike};
 use std::error::Error;
 use tracing::{debug, info, warn};
@@ -165,13 +164,24 @@ impl JoonwooModel {
             return Ok(None);
         }
 
-        // ONNX 모델로 최고 확률 종목 예측
-        let predictor = self
-            .predictor
-            .as_mut()
-            .ok_or("ONNX 예측기가 초기화되지 않았습니다")?;
+        // ONNX 모델 준비 (최초 사용 시 현재 실행 모드로 초기화)
+        if self.predictor.is_none() {
+            let mode = apis.get_current_mode().clone();
+            match ONNXPredictor::new(mode) {
+                Ok(p) => {
+                    self.predictor = Some(p);
+                    info!("✅ [joonwoo] ONNX 예측기 초기화 완료 (모드: {:?})", apis.get_current_mode());
+                }
+                Err(e) => {
+                    return Err(Box::new(e));
+                }
+            }
+        }
 
-        // DB 연결 가져오기 (백테스트 모드에서만 사용)
+        // ONNX 모델로 최고 확률 종목 예측
+        let predictor = self.predictor.as_mut().ok_or("ONNX 예측기 초기화 실패")?;
+
+        // DB 연결 가져오기
         let db = apis
             .db_api
             .get_db_connection()
@@ -423,17 +433,9 @@ impl JoonwooModel {
 impl Model for JoonwooModel {
     fn on_start(&mut self) -> Result<(), Box<dyn Error>> {
         info!("🚀 [joonwoo] 모델 시작!");
-
-        // ONNX 예측기 초기화
-        match ONNXPredictor::new(TradingMode::Backtest) {
-            Ok(predictor) => {
-                self.predictor = Some(predictor);
-                info!("✅ [joonwoo] ONNX 예측기 초기화 완료");
-            }
-            Err(e) => {
-                return Err(Box::new(e));
-            }
-        }
+        // ONNX 예측기는 최초 사용 시 현재 실행 모드로 초기화 (lazy init)
+        self.predictor = None;
+        info!("🕒 [joonwoo] ONNX 예측기는 최초 사용 시 초기화됩니다");
 
         self.state = TradingState::WaitingForEntry;
         info!(

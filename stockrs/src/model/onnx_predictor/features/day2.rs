@@ -158,14 +158,14 @@ pub fn calculate_prev_close_to_now_ratio(
             |row| row.get(0),
         )
         .map_err(|_| {
-            crate::utility::errors::StockrsError::database_query(format!(
+            StockrsError::database_query(format!(
                 "전일 데이터 존재 여부 확인 실패: {} (날짜: {})",
                 table_name, prev_date_str
             ))
         })?;
 
     if prev_data_exists == 0 {
-        return Err(crate::utility::errors::StockrsError::database_query(format!(
+        return Err(StockrsError::database_query(format!(
             "전일 데이터가 없습니다: {} (테이블: {}, 날짜: {})",
             stock_code, table_name, prev_date_str
         )));
@@ -179,7 +179,7 @@ pub fn calculate_prev_close_to_now_ratio(
     )?;
 
     if prev_close <= 0.0 {
-        return Err(crate::utility::errors::StockrsError::prediction(format!(
+        return Err(StockrsError::prediction(format!(
             "전일 종가가 유효하지 않습니다: {:.2} (종목: {})",
             prev_close, stock_code
         )));

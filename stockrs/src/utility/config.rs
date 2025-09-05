@@ -46,6 +46,8 @@ pub struct OnnxModelConfig {
     pub model_file_path: String,
     pub features_file_path: String,
     pub included_stocks_file_path: String,
+    /// 특징 계산용 거래일 파일 경로 (이전/다음 거래일 계산 등)
+    pub features_trading_dates_file_path: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

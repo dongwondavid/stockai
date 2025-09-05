@@ -1,7 +1,9 @@
-day3_morning_volume_ratio
-day4_pos_vs_high_10d
 day2_prev_day_range_ratio
-day3_breaks_6month_high
+day4_bollinger_band_width
+day4_pos_vs_high_5d
+day4_pos_vs_high_10d
 day3_morning_mdd
-day3_breaks_6month_high_with_long_candle
+day4_pos_vs_high_3d
+day1_volume_ratio
+day1_vwap_position_ratio
 day1_long_candle_ratio

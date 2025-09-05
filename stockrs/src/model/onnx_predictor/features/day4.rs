@@ -1,4 +1,4 @@
-use super::utils::{calculate_ema, get_daily_data, get_morning_data};
+use super::utils::{calculate_ema, get_morning_data};
 use crate::utility::errors::{StockrsError, StockrsResult};
 use chrono::{Duration, NaiveDate};
 use rusqlite::Connection;
@@ -115,8 +115,9 @@ pub fn calculate_macd_histogram(
     Ok(macd)
 }
 
-/// day4_pos_vs_high_5d: 5일 고점 대비 현재가 위치
+/// day4_pos_vs_high_5d: 5일 고점 대비 현재가 위치 (현재가는 오전 5분봉, 전일까지의 고점 사용)
 pub fn calculate_pos_vs_high_5d(
+    db_5min: &Connection,
     daily_db: &Connection,
     stock_code: &str,
     date: &str,
@@ -143,11 +144,11 @@ pub fn calculate_pos_vs_high_5d(
         stock_code, table_name
     );
 
-    // 당일 현재가 조회 (일봉 데이터에서 종가 사용)
-    let daily_data = get_daily_data(daily_db, stock_code, date)?;
-    let current_price = daily_data.get_close().ok_or_else(|| {
+    // 당일 현재가는 오전 5분봉 데이터에서 조회 (09:05~09:30 또는 특이일 10:05~10:30의 마지막 종가)
+    let morning_data = get_morning_data(db_5min, stock_code, date)?;
+    let current_price = morning_data.get_last_close().ok_or_else(|| {
         StockrsError::prediction(format!(
-            "당일 종가를 찾을 수 없습니다 (종목: {})",
+            "당일 오전 현재가(5분봉)를 찾을 수 없습니다 (종목: {})",
             stock_code
         ))
     })?;
@@ -161,21 +162,22 @@ pub fn calculate_pos_vs_high_5d(
         five_days_ago_str, target_date_str
     );
 
-    let five_day_high: f64 = daily_db.query_row(
+    // 전일까지의 고점만 사용하기 위해 target_date 미포함(<)
+    let five_day_high_opt: Option<f64> = daily_db.query_row(
         &format!(
-            "SELECT MAX(high) FROM \"{}\" WHERE date >= ? AND date <= ?",
+            "SELECT MAX(high) FROM \"{}\" WHERE date >= ? AND date < ?",
             table_name
         ),
         rusqlite::params![&five_days_ago_str, &target_date_str],
-        |row| row.get(0),
+        |row| row.get::<_, Option<f64>>(0),
     )?;
 
-    if five_day_high <= 0.0 {
-        return Err(StockrsError::prediction(format!(
-            "5일 고점이 유효하지 않습니다: {:.2}",
-            five_day_high
-        )));
-    }
+    let five_day_high = match five_day_high_opt {
+        Some(v) if v > 0.0 => v,
+        _ => {
+            return Ok(0.0);
+        }
+    };
 
     Ok(current_price / five_day_high)
 }
@@ -214,8 +216,9 @@ pub fn calculate_rsi_value(db: &Connection, stock_code: &str, date: &str) -> Sto
     Ok(rsi)
 }
 
-/// day4_pos_vs_high_3d: 3일 고점 대비 현재가 위치
+/// day4_pos_vs_high_3d: 3일 고점 대비 현재가 위치 (현재가는 오전 5분봉, 전일까지의 고점 사용)
 pub fn calculate_pos_vs_high_3d(
+    db_5min: &Connection,
     daily_db: &Connection,
     stock_code: &str,
     date: &str,
@@ -242,11 +245,11 @@ pub fn calculate_pos_vs_high_3d(
         stock_code, table_name
     );
 
-    // 당일 현재가 조회 (일봉 데이터에서 종가 사용)
-    let daily_data = get_daily_data(daily_db, stock_code, date)?;
-    let current_price = daily_data.get_close().ok_or_else(|| {
+    // 당일 현재가는 오전 5분봉 데이터에서 조회
+    let morning_data = get_morning_data(db_5min, stock_code, date)?;
+    let current_price = morning_data.get_last_close().ok_or_else(|| {
         StockrsError::prediction(format!(
-            "당일 종가를 찾을 수 없습니다 (종목: {})",
+            "당일 오전 현재가(5분봉)를 찾을 수 없습니다 (종목: {})",
             stock_code
         ))
     })?;
@@ -260,58 +263,107 @@ pub fn calculate_pos_vs_high_3d(
         three_days_ago_str, target_date_str
     );
 
-    let three_day_high: f64 = daily_db.query_row(
+    // 전일까지의 고점만 사용하기 위해 target_date 미포함(<)
+    let three_day_high_opt: Option<f64> = daily_db.query_row(
         &format!(
-            "SELECT MAX(high) FROM \"{}\" WHERE date >= ? AND date <= ?",
+            "SELECT MAX(high) FROM \"{}\" WHERE date >= ? AND date < ?",
             table_name
         ),
         rusqlite::params![&three_days_ago_str, &target_date_str],
-        |row| row.get(0),
+        |row| row.get::<_, Option<f64>>(0),
     )?;
 
-    if three_day_high <= 0.0 {
-        return Err(StockrsError::prediction(format!(
-            "3일 고점이 유효하지 않습니다: {:.2}",
-            three_day_high
-        )));
-    }
+    let three_day_high = match three_day_high_opt {
+        Some(v) if v > 0.0 => v,
+        _ => {
+            return Ok(0.0);
+        }
+    };
 
     Ok(current_price / three_day_high)
 }
 
-/// 10일 고점 대비 현재 위치 계산
-pub fn calculate_pos_vs_high_10d(daily_db: &Connection, stock_code: &str, date: &str) -> StockrsResult<f64> {
-    // 최근 10일 고점 대비 현재가 위치 비율
+/// day4_pos_vs_high_10d: 10일 종가 최고치 대비 현재가 위치 (현재가는 오전 5분봉, 전일까지의 종가 사용)
+pub fn calculate_pos_vs_high_10d(
+    db_5min: &Connection,
+    daily_db: &Connection,
+    stock_code: &str,
+    date: &str,
+) -> StockrsResult<f64> {
+    // 테이블명
     let table_name = stock_code;
+
+    // 당일 현재가는 오전 5분봉 데이터에서 조회
+    let morning_data = get_morning_data(db_5min, stock_code, date)?;
+    let current_price = morning_data.get_last_close().ok_or_else(|| {
+        StockrsError::prediction(format!(
+            "당일 오전 현재가(5분봉)를 찾을 수 없습니다 (종목: {})",
+            stock_code
+        ))
+    })?;
+
+    // 전일까지의 최근 10일 종가 조회 (오늘 제외)
     let query = format!(
-        "SELECT close FROM \"{}\" WHERE date <= ? ORDER BY date DESC LIMIT 11",
+        "SELECT close FROM \"{}\" WHERE date < ? ORDER BY date DESC LIMIT 10",
         table_name
     );
-    
+
     let mut stmt = daily_db.prepare(&query)?;
     let rows = stmt.query_map([&date.parse::<i32>().unwrap_or(0)], |row| {
         Ok(row.get::<_, i32>(0)?)
     })?;
-    
+
     let mut prices = Vec::new();
     for row in rows {
         prices.push(row? as f64);
     }
-    
-    // 가격을 시간순으로 정렬 (최신이 마지막)
+
+    // 시간순 정렬 (최신이 마지막)
     prices.reverse();
-    
-    if prices.len() < 11 {
-        return Ok(0.0); // 데이터가 부족하면 0.0 반환
+
+    // 데이터가 10개 미만이면 보수적으로 0.0 반환
+    if prices.len() < 10 {
+        return Ok(0.0);
     }
-    
-    let current_price = prices[prices.len() - 1]; // 현재가
-    let high_10d = prices.iter().take(10).fold(f64::NEG_INFINITY, |a, &b| a.max(b)); // 10일 고점
-    
+
+    // 최근 10일 종가의 최고치
+    let high_10d = prices.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+
     if high_10d > 0.0 {
-        // 현재가 / 10일 고점 비율
         Ok(current_price / high_10d)
     } else {
         Ok(0.0)
     }
+}
+
+/// day4_bollinger_band_width: 볼린저 밴드 폭 (상단-하단/중심선)
+pub fn calculate_bollinger_band_width(
+    db: &Connection,
+    stock_code: &str,
+    date: &str,
+) -> StockrsResult<f64> {
+    let morning_data = get_morning_data(db, stock_code, date)?;
+    
+    // 오전 데이터는 보통 6개 이므로 가변 윈도우(최소 5)
+    if morning_data.closes.len() < 5 {
+        return Ok(0.0);
+    }
+
+    // 이동평균과 표준편차 계산 (가용 구간 전체)
+    let prices: Vec<f64> = morning_data.closes.iter().copied().collect();
+    let sma = prices.iter().sum::<f64>() / prices.len() as f64;
+
+    let variance = prices.iter().map(|&p| (p - sma).powi(2)).sum::<f64>() / prices.len() as f64;
+    let std_dev = variance.sqrt();
+
+    let upper_band = sma + (2.0 * std_dev);
+    let lower_band = sma - (2.0 * std_dev);
+
+    let band_width = if sma > 0.0 {
+        (upper_band - lower_band) / sma
+    } else {
+        0.0
+    };
+
+    Ok(band_width)
 }
