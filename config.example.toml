@@ -10,13 +10,13 @@ daily_db_path = "D:\\db\\stock_price(1day)_with_data.db"
 # 주식 가격 데이터베이스 경로 (1분봉)
 minute_db_path = "D:\\db\\stock_price(1min).db"
 # 거래 결과 저장용 데이터베이스
-trading_db_path = "eval/test_2.db"
+trading_db_path = "eval/ridge_model.db"
 
 [onnx_model]
 # ONNX 모델 파일 경로
-model_file_path = "data/first.onnx"
+model_file_path = "data/ridge_model.onnx"
 # 특징 리스트 파일
-features_file_path = "data/features_first.txt"
+features_file_path = "data/features.txt"
 # 포함할 종목 리스트
 included_stocks_file_path = "data/stocks.txt"
 # 특징 계산용 거래일 파일 경로 (전일/다음일 계산에 사용)
@@ -89,15 +89,15 @@ skip_missing_price_as_unavailable = true
 [joonwoo]
 # ====== Joonwoo 모델 전용 설정 ======
 # 손절매 비율 (%)
-stop_loss_pct = 10
+stop_loss_pct = 0.2
 # 익절매 비율 (%)
-take_profit_pct = 5
+take_profit_pct = 5.0
 # 추가 손절매 비율 (절반 매도 후 트레일링 스탑) (%)
 trailing_stop_pct = 0.5
 # 매수 시점 (24시간 형식)
 entry_time = "09:30:00"
 # 강제 정리 시점 (24시간 형식)
-force_close_time = "15:00:00"
+force_close_time = "12:00:00"
 # 매수 시 사용할 자산 비율 (%)
 entry_asset_ratio = 50
 # 고정 매수 금액 (원) - 0이면 비율 기반 매수만 사용
@@ -114,7 +114,7 @@ event_check_interval = 30
 # trading_dates_file_path에서 자동으로 시작/종료 날짜 설정 (true/false)
 # true: 파일의 첫 번째 날짜를 start_date로, 마지막 날짜를 end_date로 자동 설정
 # false: 아래의 start_date, end_date 설정값 사용
-auto_set_dates_from_file = true
+auto_set_dates_from_file = false
 
 # ====== 작동 기간 설정 ======
 # 프로그램 작동 시작 날짜 (YYYYMMDD 형식)

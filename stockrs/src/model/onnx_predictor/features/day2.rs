@@ -1,4 +1,9 @@
-use super::utils::{get_morning_data, get_previous_trading_day, is_first_trading_day, get_daily_data};
+use super::utils::{
+    get_morning_data,
+    get_previous_trading_day,
+    is_first_trading_day,
+    get_prev_daily_data_opt,
+};
 use crate::utility::errors::{StockrsError, StockrsResult};
 use rusqlite::Connection;
 use tracing::{debug, info, warn};
@@ -64,10 +69,8 @@ pub fn calculate_prev_day_range_ratio(
         })?;
 
     if prev_data_exists == 0 {
-        return Err(StockrsError::database_query(format!(
-            "전일 데이터가 없습니다: {} (테이블: {}, 날짜: {})",
-            stock_code, table_name, prev_date_str
-        )));
+        // 전일 데이터가 없으면 보수적으로 중립값 반환
+        return Ok(1.0);
     }
 
     // 전일 고가, 저가, 종가 조회
@@ -82,7 +85,7 @@ pub fn calculate_prev_day_range_ratio(
 
     if prev_close <= 0.0 {
         return Err(StockrsError::prediction(format!(
-            "전일 종가가 유효하지 않습니다: {:.2} (종목: {})",
+            "특징 day2_prev_day_range_ratio: 전일 종가가 유효하지 않습니다: {:.2} (종목: {})",
             prev_close, stock_code
         )));
     }
@@ -95,7 +98,7 @@ pub fn calculate_prev_day_range_ratio(
 
 /// day2_prev_close_to_now_ratio: 전일 종가 대비 현재가 비율
 pub fn calculate_prev_close_to_now_ratio(
-    db: &Connection,
+    db_5min: &Connection,
     daily_db: &Connection,
     stock_code: &str,
     date: &str,
@@ -159,16 +162,14 @@ pub fn calculate_prev_close_to_now_ratio(
         )
         .map_err(|_| {
             StockrsError::database_query(format!(
-                "전일 데이터 존재 여부 확인 실패: {} (날짜: {})",
+                "특징 day2_prev_close_to_now_ratio: 전일 데이터 존재 여부 확인 실패: {} (날짜: {})",
                 table_name, prev_date_str
             ))
         })?;
 
     if prev_data_exists == 0 {
-        return Err(StockrsError::database_query(format!(
-            "전일 데이터가 없습니다: {} (테이블: {}, 날짜: {})",
-            stock_code, table_name, prev_date_str
-        )));
+        // 전일 데이터 없으면 중립값 반환
+        return Ok(1.0);
     }
 
     // 전일 종가 조회
@@ -180,23 +181,23 @@ pub fn calculate_prev_close_to_now_ratio(
 
     if prev_close <= 0.0 {
         return Err(StockrsError::prediction(format!(
-            "전일 종가가 유효하지 않습니다: {:.2} (종목: {})",
+            "특징 day2_prev_close_to_now_ratio: 전일 종가가 유효하지 않습니다: {:.2} (종목: {})",
             prev_close, stock_code
         )));
     }
 
     // 당일 현재가 조회 (9시반 이전 5분봉 마지막 종가)
-    let morning_data = get_morning_data(db, stock_code, date)?;
+    let morning_data = get_morning_data(db_5min, stock_code, date)?;
     let current_close = morning_data.get_last_close().ok_or_else(|| {
         StockrsError::prediction(format!(
-            "당일 현재가를 찾을 수 없습니다 (종목: {})",
+            "특징 day2_prev_close_to_now_ratio: 당일 현재가를 찾을 수 없습니다 (종목: {})",
             stock_code
         ))
     })?;
 
     if current_close <= 0.0 {
         return Err(StockrsError::prediction(format!(
-            "당일 현재가가 유효하지 않습니다: {:.2} (종목: {})",
+            "특징 day2_prev_close_to_now_ratio: 당일 현재가가 유효하지 않습니다: {:.2} (종목: {})",
             current_close, stock_code
         )));
     }
@@ -206,7 +207,7 @@ pub fn calculate_prev_close_to_now_ratio(
 
 /// 전일 대비 거래량 비율 계산
 pub fn calculate_volume_ratio_vs_prevday(
-    db: &Connection,
+    db_5min: &Connection,
     daily_db: &Connection,
     stock_code: &str,
     date: &str,
@@ -232,21 +233,23 @@ pub fn calculate_volume_ratio_vs_prevday(
     
     // 전일 거래량 조회
     info!("🔍 [day2_volume_ratio_vs_prevday] 전일 거래량 조회 중... (종목: {}, 전일: {})", stock_code, prev_date);
-    let prev_data = get_daily_data(daily_db, stock_code, &prev_date)?;
-    let prev_volume = prev_data.get_volume()
-        .ok_or_else(|| StockrsError::unsupported_feature(
-            "calculate_volume_ratio_vs_prevday".to_string(),
-            "전일 거래량 데이터가 필요합니다".to_string(),
-        ))?;
+    let prev_data_opt = get_prev_daily_data_opt(daily_db, stock_code, &date, trading_dates)?;
+    let prev_volume = match prev_data_opt.and_then(|d| d.get_volume()) {
+        Some(v) if v > 0.0 => v,
+        _ => {
+            // 전일 거래량이 없거나 0이면 중립값 반환
+            return Ok(1.0);
+        }
+    };
     info!("📊 [day2_volume_ratio_vs_prevday] 전일 거래량: {} (종목: {}, 전일: {})", prev_volume, stock_code, prev_date);
     
     // 당일 오전 거래량 조회 (5분봉 DB에서 조회)
     info!("🔍 [day2_volume_ratio_vs_prevday] 당일 오전 거래량 조회 중...");
-    let today_data = get_morning_data(db, stock_code, date)?;
+    let today_data = get_morning_data(db_5min, stock_code, date)?;
     let today_volume = today_data.get_avg_volume()
         .ok_or_else(|| StockrsError::unsupported_feature(
             "calculate_volume_ratio_vs_prevday".to_string(),
-            "당일 오전 거래량 데이터가 필요합니다".to_string(),
+            "특징 day2_volume_ratio_vs_prevday: 당일 오전 거래량 데이터가 필요합니다".to_string(),
         ))?;
     info!("📊 [day2_volume_ratio_vs_prevday] 당일 오전 거래량: {}", today_volume);
     

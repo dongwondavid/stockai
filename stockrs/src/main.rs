@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use stockrs::{
     utility::config::{Config, set_global_config},
     utility::errors::{StockrsError, StockrsResult},
-    model::{JoonwooModel, DongwonModel},
+    model::{JoonwooModel, DongwonModel, MinseopModel},
     runner::RunnerBuilder,
     utility::types::api::ApiType,
 };
@@ -27,7 +27,7 @@ struct Args {
     #[arg(long)]
     trading_db: Option<String>,
 
-    /// 모델 선택 (joonwoo/dongwon). 기본값: joonwoo
+    /// 모델 선택 (joonwoo/dongwon/minseop). 기본값: joonwoo
     #[arg(long, default_value = "joonwoo")]
     model: String,
 }
@@ -89,6 +89,10 @@ fn main() -> StockrsResult<()> {
         "dongwon" => {
             info!("🧠 dongwon 모델 생성");
             Box::new(DongwonModel::new())
+        }
+        "minseop" => {
+            info!("🧠 minseop 모델 생성");
+            Box::new(MinseopModel::new())
         }
         "joonwoo" | _ => {
             info!("🧠 joonwoo 모델 생성");

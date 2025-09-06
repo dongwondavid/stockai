@@ -1,6 +1,7 @@
 pub mod joonwoo;
 pub mod onnx_predictor; // 재활성화
 pub mod dongwon;
+pub mod minseop;
 
 // 공용 타입들
 use crate::utility::types::api::{SharedApi, StockApi};
@@ -206,3 +207,4 @@ impl ApiBundle {
 pub use joonwoo::JoonwooModel;
 pub use onnx_predictor::ONNXPredictor;
 pub use dongwon::DongwonModel;
+pub use minseop::MinseopModel;

@@ -4,11 +4,11 @@ use rusqlite::Connection;
 
 /// day1_current_price_ratio: 현재가 / 시가 비율
 pub fn calculate_current_price_ratio(
-    db: &Connection,
+    db_5min: &Connection,
     stock_code: &str,
     date: &str,
 ) -> StockrsResult<f64> {
-    let morning_data = get_morning_data(db, stock_code, date)?;
+    let morning_data = get_morning_data(db_5min, stock_code, date)?;
 
     match (morning_data.get_last_close(), morning_data.get_last_open()) {
         (Some(close), Some(open)) => {
@@ -30,11 +30,11 @@ pub fn calculate_current_price_ratio(
 
 /// day1_high_price_ratio: 고가 / 시가 비율
 pub fn calculate_high_price_ratio(
-    db: &Connection,
+    db_5min: &Connection,
     stock_code: &str,
     date: &str,
 ) -> StockrsResult<f64> {
-    let morning_data = get_morning_data(db, stock_code, date)?;
+    let morning_data = get_morning_data(db_5min, stock_code, date)?;
 
     match (morning_data.get_max_high(), morning_data.get_last_open()) {
         (Some(max_high), Some(open)) => {
@@ -56,11 +56,11 @@ pub fn calculate_high_price_ratio(
 
 /// day1_low_price_ratio: 저가 / 시가 비율
 pub fn calculate_low_price_ratio(
-    db: &Connection,
+    db_5min: &Connection,
     stock_code: &str,
     date: &str,
 ) -> StockrsResult<f64> {
-    let morning_data = get_morning_data(db, stock_code, date)?;
+    let morning_data = get_morning_data(db_5min, stock_code, date)?;
 
     match (morning_data.get_min_low(), morning_data.get_last_open()) {
         (Some(min_low), Some(open)) => {
@@ -82,11 +82,11 @@ pub fn calculate_low_price_ratio(
 
 /// day1_price_position_ratio: 현재가가 당일 고저가 범위에서 차지하는 위치 비율
 pub fn calculate_price_position_ratio(
-    db: &Connection,
+    db_5min: &Connection,
     stock_code: &str,
     date: &str,
 ) -> StockrsResult<f64> {
-    let morning_data = get_morning_data(db, stock_code, date)?;
+    let morning_data = get_morning_data(db_5min, stock_code, date)?;
 
     match morning_data.get_last_candle() {
         Some((close, _, high, low)) => {
@@ -102,11 +102,11 @@ pub fn calculate_price_position_ratio(
 
 /// day1_fourth_derivative: 4차 도함수 근사 계산
 pub fn calculate_fourth_derivative(
-    db: &Connection,
+    db_5min: &Connection,
     stock_code: &str,
     date: &str,
 ) -> StockrsResult<f64> {
-    let morning_data = get_morning_data(db, stock_code, date)?;
+    let morning_data = get_morning_data(db_5min, stock_code, date)?;
 
     if morning_data.closes.len() < 5 {
         return Ok(0.0);
@@ -132,11 +132,11 @@ pub fn calculate_fourth_derivative(
 
 /// day1_long_candle_ratio: 긴 양봉 비율
 pub fn calculate_long_candle_ratio(
-    db: &Connection,
+    db_5min: &Connection,
     stock_code: &str,
     date: &str,
 ) -> StockrsResult<f64> {
-    let morning_data = get_morning_data(db, stock_code, date)?;
+    let morning_data = get_morning_data(db_5min, stock_code, date)?;
 
     match morning_data.get_last_candle() {
         Some((_, open, high, low)) => {
@@ -155,11 +155,11 @@ pub fn calculate_long_candle_ratio(
 
 /// day1_fifth_derivative: 5차 도함수 근사 계산
 pub fn calculate_fifth_derivative(
-    db: &Connection,
+    db_5min: &Connection,
     stock_code: &str,
     date: &str,
 ) -> StockrsResult<f64> {
-    let morning_data = get_morning_data(db, stock_code, date)?;
+    let morning_data = get_morning_data(db_5min, stock_code, date)?;
 
     if morning_data.closes.len() < 6 {
         return Ok(0.0);
@@ -185,11 +185,11 @@ pub fn calculate_fifth_derivative(
 
 /// day1_sixth_derivative: 6차 도함수 근사 계산 (연속된 6개 점의 가격 변화 패턴)
 pub fn calculate_sixth_derivative(
-    db: &Connection,
+    db_5min: &Connection,
     stock_code: &str,
     date: &str,
 ) -> StockrsResult<f64> {
-    let morning_data = get_morning_data(db, stock_code, date)?;
+    let morning_data = get_morning_data(db_5min, stock_code, date)?;
 
     if morning_data.closes.len() < 6 {
         return Ok(0.0);
@@ -220,8 +220,8 @@ pub fn calculate_sixth_derivative(
 }
 
 /// 거래량 비율 계산
-pub fn calculate_volume_ratio(db: &Connection, stock_code: &str, date: &str) -> StockrsResult<f64> {
-    let morning_data = get_morning_data(db, stock_code, date)?;
+pub fn calculate_volume_ratio(db_5min: &Connection, stock_code: &str, date: &str) -> StockrsResult<f64> {
+    let morning_data = get_morning_data(db_5min, stock_code, date)?;
     
     let current_volume = morning_data.get_current_volume()
         .ok_or_else(|| StockrsError::unsupported_feature(
@@ -246,8 +246,8 @@ pub fn calculate_volume_ratio(db: &Connection, stock_code: &str, date: &str) -> 
 }
 
 /// VWAP 위치 비율 계산
-pub fn calculate_vwap_position_ratio(db: &Connection, stock_code: &str, date: &str) -> StockrsResult<f64> {
-    let morning_data = get_morning_data(db, stock_code, date)?;
+pub fn calculate_vwap_position_ratio(db_5min: &Connection, stock_code: &str, date: &str) -> StockrsResult<f64> {
+    let morning_data = get_morning_data(db_5min, stock_code, date)?;
     
     let vwap = morning_data.get_vwap()
         .ok_or_else(|| StockrsError::unsupported_feature(
@@ -271,5 +271,27 @@ pub fn calculate_vwap_position_ratio(db: &Connection, stock_code: &str, date: &s
         Ok((vwap - min_low) / (max_high - min_low))
     } else {
         Ok(0.5)
+    }
+}
+
+/// day1_long_candle_strength: 긴 양봉 강도 (회귀분석 친화적)
+pub fn calculate_long_candle_strength(
+    db_5min: &Connection,
+    stock_code: &str,
+    date: &str,
+) -> StockrsResult<f64> {
+    let morning_data = get_morning_data(db_5min, stock_code, date)?;
+
+    match morning_data.get_last_candle() {
+        Some((_, open, high, low)) => {
+            if open > 0.0 {
+                let range_ratio = (high - low) / open * 100.0;
+                let strength = (range_ratio - 2.0).max(0.0) / 5.0;
+                Ok(strength.min(1.0)) // [0, 1] 범위로 클리핑
+            } else {
+                Ok(0.0)
+            }
+        }
+        _ => Ok(0.0),
     }
 }

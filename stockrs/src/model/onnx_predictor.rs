@@ -25,10 +25,28 @@ pub struct StockFeatures {
     pub features: Vec<f64>,
 }
 
+fn argmax_f64(xs: &[f64]) -> Option<usize> {
+    if xs.is_empty() { return None; }
+    let mut best_i = 0usize;
+    let mut best_v = xs[0];
+    for (i, &v) in xs.iter().enumerate().skip(1) {
+        if v.partial_cmp(&best_v).unwrap_or(std::cmp::Ordering::Less).is_gt() {
+            best_v = v; best_i = i;
+        }
+    }
+    Some(best_i)
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PredictionResult {
     pub stock_code: String,
     pub probability: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RegressionPredictionResult {
+    pub stock_code: String,
+    pub value: f64,
 }
 
 pub struct ONNXPredictor {
@@ -386,6 +404,219 @@ impl ONNXPredictor {
         info!("총 예측 종목 수: {}개", results.len());
 
         Ok(results)
+    }
+
+    /// 회귀 ONNX 모델을 사용해 최고 종목을 예측 (배치 입력)
+    pub fn predict_top_stock_regression(
+        &mut self,
+        date: &str,
+        db: &Connection,
+        daily_db: &Connection,
+    ) -> StockrsResult<Option<(String, f64, Vec<RegressionPredictionResult>)>> {
+        info!(
+            "🧮 [ONNX-REG] {}일 최고 회귀값 종목 예측 중... (모드: {:?})",
+            date, self.trading_mode
+        );
+
+        if self.trading_mode == TradingMode::Backtest && self.trading_dates.is_empty() {
+            return Err(StockrsError::prediction("거래일 리스트가 없습니다".to_string()));
+        }
+
+        // 투자 모드별 거래대금 상위 30개 → stocks.txt 포함 종목으로 필터 → 상위 10개
+        let top_stocks = match self.trading_mode {
+            TradingMode::Real | TradingMode::Paper => {
+                let korea_api = KoreaApi::new_info()?;
+                let codes = korea_api.get_top_amount_stocks(30)?;
+                codes
+                    .into_iter()
+                    .map(|c| if c.starts_with('A') { c } else { format!("A{}", c) })
+                    .collect::<Vec<String>>()
+            }
+            TradingMode::Backtest => {
+                let (date_start, date_end) = crate::model::onnx_predictor::features::utils::get_time_range_for_date(date);
+                let db_api = DbApi::new()?;
+                db_api.get_top_amount_stocks(date, 30, &date_start, &date_end)?
+            }
+        };
+
+        let filtered_stocks: Vec<String> = top_stocks
+            .into_iter()
+            .filter(|s| self.included_stocks_set.contains(s))
+            .collect();
+
+        if filtered_stocks.is_empty() {
+            return Err(StockrsError::prediction("분석할 종목이 없습니다".to_string()));
+        }
+
+        let final_stocks = if filtered_stocks.len() > 10 {
+            filtered_stocks.into_iter().take(10).collect::<Vec<String>>()
+        } else {
+            filtered_stocks
+        };
+
+        // 특징 계산 (N종목 배치 입력용)
+        let features_data = self.calculate_features_for_stocks(&final_stocks, date, db, daily_db)?;
+        if features_data.is_empty() {
+            return Err(StockrsError::prediction("계산된 특징이 없습니다".to_string()));
+        }
+
+        // ONNX 회귀 추론 (한 번에)
+        let (best_idx, values) = self.predict_with_onnx_regression(&features_data)?;
+        // 방어: best_idx가 범위를 벗어나면 argmax로 대체 (정렬로 최종 선택)
+        if !(best_idx >= 0 && (best_idx as usize) < features_data.len()) {
+            debug!("[ONNX-REG] best_idx={} 범위 밖 → argmax로 대체", best_idx);
+            let _ = argmax_f64(&values).unwrap_or(0);
+        }
+
+        // 결과 매핑 및 정렬
+        let mut all = Vec::with_capacity(features_data.len());
+        for (i, s) in features_data.iter().enumerate() {
+            all.push(RegressionPredictionResult {
+                stock_code: s.stock_code.clone(),
+                value: values[i],
+            });
+        }
+        all.sort_by(|a, b| b.value.partial_cmp(&a.value).unwrap_or(std::cmp::Ordering::Equal));
+
+        let best = &all[0];
+        info!("🏆 [ONNX-REG] 최고 종목: {} (value: {:.6})", best.stock_code, best.value);
+
+        Ok(Some((best.stock_code.clone(), best.value, all)))
+    }
+
+    /// 회귀 ONNX: 출력0 = best_index(i64, scalar), 출력1 = values(f32, [N] or [N,1] or [1,N])
+    fn predict_with_onnx_regression(
+        &self,
+        features_data: &[StockFeatures],
+    ) -> StockrsResult<(i64, Vec<f64>)> {
+        let n = features_data.len();
+        let f = self.features.len();
+
+        // 1) 배치 입력 Array2<f32> (N, F)
+        let mut mat = Array2::<f32>::zeros((n, f));
+        for (row, sf) in features_data.iter().enumerate() {
+            if sf.features.len() != f {
+                return Err(StockrsError::prediction(format!(
+                    "특징 수 불일치: 기대 {} vs 실제 {} (종목 {})",
+                    f,
+                    sf.features.len(),
+                    sf.stock_code
+                )));
+            }
+            for (col, &v) in sf.features.iter().enumerate() {
+                let val = v as f32;
+                mat[(row, col)] = if val.is_finite() { val } else { 0.0 };
+            }
+        }
+
+        // 2) 텐서로 변환
+        use ndarray::CowArray;
+        let input_dyn = mat.into_dyn();
+        let input_cow = CowArray::from(input_dyn);
+        let input_tensor = Value::from_array(&self.session.allocator() as *const _ as *mut _, &input_cow)
+            .map_err(|e| StockrsError::prediction(format!("입력 텐서 생성 실패: {}", e)))?;
+
+        // 3) 실행 (출력 0: i64 scalar, 출력 1: f32 vector/2D)
+        let outputs = self.session
+            .run(vec![input_tensor])
+            .map_err(|e| StockrsError::prediction(format!("ONNX 모델 실행 실패: {}", e)))?;
+
+        if outputs.len() < 2 {
+            return Err(StockrsError::prediction(format!(
+                "ONNX 출력이 2개 미만입니다 (got: {})", outputs.len()
+            )));
+        }
+
+        // 4) best_index 추출
+        let best_idx: i64 = {
+            let o0 = &outputs[0];
+            let t = o0.try_extract::<i64>()
+                .map_err(|_| StockrsError::prediction("best_index 텐서 추출 실패".to_string()))?;
+            let view = t.view();
+            let slice = view.as_slice().ok_or_else(|| {
+                StockrsError::prediction("best_index 슬라이스 추출 실패".to_string())
+            })?;
+            if slice.is_empty() {
+                return Err(StockrsError::prediction("best_index 비어있음".to_string()));
+            }
+            slice[0]
+        };
+
+        // 5) values 추출 (shape: [N], [N,1], [1,N] 모두 대응)
+        let values_f64: Vec<f64> = {
+            let o1 = &outputs[1];
+            let t = o1.try_extract::<f32>()
+                .map_err(|_| StockrsError::prediction("values 텐서 추출 실패".to_string()))?;
+            let view = t.view();
+            let shape: Vec<usize> = view.shape().to_vec();
+
+            // 가능한 모양에 유연 대응
+            let flatten: Vec<f32> = match shape.len() {
+                1 => {
+                    // [N]
+                    view.as_slice()
+                        .ok_or_else(|| StockrsError::prediction("values 슬라이스 실패([N])".to_string()))?
+                        .to_vec()
+                }
+                2 => {
+                    use ndarray::Axis;
+                    let (d0, d1) = (shape[0], shape[1]);
+                    if d0 == n && d1 == 1 {
+                        // [N,1] → squeeze
+                        view.index_axis(Axis(1), 0)
+                            .to_owned()
+                            .iter()
+                            .cloned()
+                            .collect()
+                    } else if d0 == 1 && d1 == n {
+                        // [1,N] → squeeze
+                        view.index_axis(Axis(0), 0)
+                            .to_owned()
+                            .iter()
+                            .cloned()
+                            .collect()
+                    } else if d0 == n && d1 == f {
+                        // [N,F]가 나오는 경우 방어: 평균으로 스칼라화
+                        view.outer_iter()
+                            .map(|row| {
+                                let mut s = 0.0f32;
+                                let mut c = 0usize;
+                                for v in row.iter() { s += *v; c += 1; }
+                                if c > 0 { s / (c as f32) } else { 0.0 }
+                            })
+                            .collect()
+                    } else {
+                        return Err(StockrsError::prediction(format!(
+                            "알 수 없는 values shape: {:?}, 기대 N={}, 또는 [N,1]/[1,N]",
+                            shape, n
+                        )));
+                    }
+                }
+                _ => {
+                    return Err(StockrsError::prediction(format!(
+                        "values 차원 수 비정상: {:?}",
+                        shape
+                    )));
+                }
+            };
+
+            if flatten.len() != n {
+                return Err(StockrsError::prediction(format!(
+                    "values 길이 불일치: 기대 {} vs 실제 {}",
+                    n, flatten.len()
+                )));
+            }
+
+            flatten
+                .into_iter()
+                .map(|v| {
+                    let x = if v.is_finite() { v as f64 } else { 0.0 };
+                    x.clamp(f64::NEG_INFINITY, f64::INFINITY)
+                })
+                .collect()
+        };
+
+        Ok((best_idx, values_f64))
     }
 
     // 유틸리티 함수들

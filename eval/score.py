@@ -5,7 +5,7 @@ import numpy as np
 from scipy import stats
 
 # 1) DB 연결 및 데이터 로드
-conn = sqlite3.connect('test_com.db')
+conn = sqlite3.connect('eval/ridge_model.db')
 overview = pd.read_sql_query("SELECT date, roi, turnover, fee FROM overview", conn, parse_dates=['date'])
 trading = pd.read_sql_query("SELECT date, time, buy_or_sell, profit, roi, fee, stockcode FROM trading", conn, parse_dates=['date'])
 

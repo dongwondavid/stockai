@@ -1,12 +1,16 @@
-use super::utils::{get_morning_data, get_daily_data, is_first_trading_day, get_previous_trading_day};
+use super::utils::{
+    get_morning_data,
+    is_first_trading_day,
+    get_prev_daily_data_opt,
+};
 use crate::utility::errors::{StockrsError, StockrsResult};
 use chrono::{Duration, NaiveDate};
 use rusqlite::Connection;
 use tracing::debug;
 
 /// day3_morning_mdd: 장 시작 후 최대 낙폭(Maximum Drawdown)
-pub fn calculate_morning_mdd(db: &Connection, stock_code: &str, date: &str) -> StockrsResult<f64> {
-    let morning_data = get_morning_data(db, stock_code, date)?;
+pub fn calculate_morning_mdd(db_5min: &Connection, stock_code: &str, date: &str) -> StockrsResult<f64> {
+    let morning_data = get_morning_data(db_5min, stock_code, date)?;
 
     if morning_data.closes.is_empty() {
         return Ok(0.0);
@@ -30,8 +34,19 @@ pub fn calculate_morning_mdd(db: &Connection, stock_code: &str, date: &str) -> S
     Ok(-mdd) // 음수로 반환 (낙폭)
 }
 
+
+/// 테이블명 생성 시 A 접두사 중복 방지
+fn get_table_name(stock_code: &str) -> String {
+    if stock_code.starts_with('A') {
+        stock_code.to_string()
+    } else {
+        format!("A{}", stock_code)
+    }
+}
+
 /// day3_breaks_6month_high: 6개월 내 최고가 돌파 여부
 pub fn calculate_breaks_6month_high(
+    db_5min: &Connection,
     daily_db: &Connection,
     stock_code: &str,
     date: &str,
@@ -39,7 +54,7 @@ pub fn calculate_breaks_6month_high(
 ) -> StockrsResult<f64> {
     // 첫 거래일인지 확인
     if is_first_trading_day(daily_db, stock_code, date, trading_dates)? {
-        return Ok(0.0);
+        return Ok(1.0);
     }
 
     // 날짜 파싱 (YYYYMMDD 형식)
@@ -70,7 +85,7 @@ pub fn calculate_breaks_6month_high(
     );
 
     // 테이블명 (일봉 DB는 A 접두사 포함)
-    let table_name = stock_code;
+    let table_name = get_table_name(stock_code);
 
     // 먼저 테이블에 데이터가 있는지 확인
     let table_count: i64 = daily_db
@@ -134,43 +149,14 @@ pub fn calculate_breaks_6month_high(
         )));
     }
 
-    // 당일 데이터 존재 여부 확인
-    let today_data_exists: i64 = daily_db
-        .query_row(
-            &format!("SELECT COUNT(*) FROM \"{}\" WHERE date = ?", table_name),
-            rusqlite::params![&target_date_str],
-            |row| row.get(0),
-        )
-        .map_err(|_| {
-            StockrsError::database_query(format!(
-                "당일 데이터 존재 여부 확인 실패: {} (날짜: {})",
-                table_name, target_date_str
-            ))
-        })?;
-
-    if today_data_exists == 0 {
-        return Err(StockrsError::database_query(format!(
-            "당일 데이터가 없습니다. 날짜: {} (테이블: {})",
-            target_date_str, table_name
-        )));
-    }
-
-    // 당일 일봉 고가 조회
-    let today_high: f64 = daily_db.query_row(
-        &format!("SELECT high FROM \"{}\" WHERE date = ?", table_name),
-        rusqlite::params![&target_date_str],
-        |row| row.get(0),
-    )?;
-
-    if today_high <= 0.0 {
-        return Err(StockrsError::prediction(format!(
-            "당일 고가가 유효하지 않습니다: {:.2}",
-            today_high
-        )));
-    }
-
-    // 6개월 전고점 돌파 여부 (당일 일봉 고가 기준) - 같을 때도 돌파로 처리
-    let breaks_6month_high = if today_high >= six_month_high && six_month_high > 0.0 {
+    // 당일 고가는 오전 5분봉의 최고가로 판단
+    let morning = get_morning_data(db_5min, stock_code, date)?;
+    let today_high = morning
+        .highs
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let breaks_6month_high = if today_high.is_finite() && six_month_high > 0.0 && today_high >= six_month_high {
         1.0
     } else {
         0.0
@@ -198,13 +184,11 @@ pub fn calculate_morning_volume_ratio(
             "오전 거래량 데이터가 필요합니다".to_string(),
         ))?;
     // 전일(이전 거래일) 일봉 거래량 조회 - 당일 사용 시 데이터 누수
-    let prev_date = get_previous_trading_day(trading_dates, date)?;
-    let daily_data = get_daily_data(daily_db, stock_code, &prev_date)?;
-    let prev_daily_volume = daily_data.get_volume()
-        .ok_or_else(|| StockrsError::unsupported_feature(
-            "calculate_morning_volume_ratio".to_string(),
-            "전일 일봉 거래량 데이터가 필요합니다".to_string(),
-        ))?;
+    let prev_opt = get_prev_daily_data_opt(daily_db, stock_code, date, trading_dates)?;
+    let prev_daily_volume = match prev_opt.and_then(|d| d.get_volume()) {
+        Some(v) if v > 0.0 => v,
+        _ => return Ok(0.5), // 중립값
+    };
     
     // 오전 거래량 비율 계산 (오전 거래량 / 전일 일봉 거래량)
     if prev_daily_volume > 0.0 {

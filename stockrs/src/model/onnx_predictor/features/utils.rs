@@ -1,6 +1,7 @@
 use crate::utility::errors::{StockrsError, StockrsResult};
 use crate::utility::config;
 use crate::utility::apis::korea_api::KoreaApi;
+use chrono::NaiveDate;
 use rusqlite::Connection;
 use std::collections::HashSet;
 use std::fs::File;
@@ -168,7 +169,7 @@ impl DailyData {
 
 /// 9시반 이전 5분봉 데이터를 조회하는 공통 함수 - 최적화됨
 pub fn get_morning_data(
-    db: &Connection,
+    db_5min: &Connection,
     stock_code: &str,
     date: &str,
 ) -> StockrsResult<MorningData> {
@@ -189,7 +190,7 @@ pub fn get_morning_data(
     let (date_start, date_end) = get_time_range_for_date(date);
 
     // 테이블 존재 여부 확인 (최적화된 쿼리)
-    let table_exists: i64 = db
+    let table_exists: i64 = db_5min
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = ?",
             rusqlite::params![&table_name],
@@ -207,7 +208,7 @@ pub fn get_morning_data(
     }
 
     // 해당 날짜의 데이터 존재 여부 확인 (최적화된 쿼리)
-    let data_exists: i64 = db
+    let data_exists: i64 = db_5min
         .query_row(
             &format!(
                 "SELECT COUNT(*) FROM \"{}\" WHERE date >= ? AND date <= ?",
@@ -226,8 +227,8 @@ pub fn get_morning_data(
     if data_exists == 0 {
         let time_range = if is_special_trading_date(date) { "10시~10시반" } else { "9시~9시반" };
         return Err(StockrsError::database_query(format!(
-            "{} 이전 데이터가 없습니다: {} (종목: {}, 범위: {} ~ {})",
-            time_range, stock_code, table_name, date_start, date_end
+            "{} 이전 데이터가 없습니다: {} (종목: {}, 범위: {} ~ {}, db_이름: {:?})",
+            time_range, stock_code, table_name, date_start, date_end, db_5min
         )));
     }
 
@@ -237,7 +238,7 @@ pub fn get_morning_data(
         table_name
     );
 
-    let mut stmt = db.prepare_cached(&query)?;
+    let mut stmt = db_5min.prepare_cached(&query)?;
     let start_i64 = date_start.parse::<i64>().unwrap();
     let end_i64 = date_end.parse::<i64>().unwrap();
     let rows = stmt.query_map([&start_i64, &end_i64], |row| {
@@ -330,7 +331,7 @@ pub fn get_daily_data(
     if data_exists == 0 {
         warn!("❌ [get_daily_data] 데이터가 없습니다 (종목: {}, 테이블: {}, 날짜: {})", stock_code, table_name, date);
         return Err(StockrsError::database_query(format!(
-            "전일 데이터가 없습니다: {} (테이블: {}, 날짜: {})",
+            "[get_daily_data] 전일 데이터가 없습니다: {} (테이블: {}, 날짜: {})",
             stock_code, table_name, date
         )));
     }
@@ -431,6 +432,23 @@ pub fn get_previous_trading_day(day_dates: &[String], date: &str) -> StockrsResu
     }
 }
 
+/// 안전한 전일 일봉 데이터 조회: trading_dates 기반으로 전일 날짜를 찾고 get_daily_data로 로드
+/// - 전일이 없거나, 전일 데이터가 DB에 없으면 None을 반환
+pub fn get_prev_daily_data_opt(
+    daily_db: &Connection,
+    stock_code: &str,
+    date: &str,
+    day_dates: &[String],
+) -> StockrsResult<Option<DailyData>> {
+    match get_previous_trading_day(day_dates, date) {
+        Ok(prev_date) => match get_daily_data(daily_db, stock_code, &prev_date) {
+            Ok(d) => Ok(Some(d)),
+            Err(_) => Ok(None),
+        },
+        Err(_) => Ok(None),
+    }
+}
+
 /// 특이한 거래일인지 판별하는 함수
 pub fn is_special_trading_date(date: &str) -> bool {
     static SPECIAL_DATES: OnceLock<HashSet<String>> = OnceLock::new();
@@ -488,4 +506,23 @@ pub fn get_time_range_for_date(date: &str) -> (String, String) {
         // 일반 날짜: 09:05~09:30 (실제 데이터는 09:05부터 시작)
         (format!("{}0905", date), format!("{}0930", date))
     }
+}
+
+/// 날짜 문자열을 NaiveDate로 파싱하는 헬퍼 함수
+/// YYYYMMDD와 YYYY-MM-DD 형식을 모두 지원
+pub fn parse_date_flexible(date_str: &str) -> StockrsResult<NaiveDate> {
+    // YYYY-MM-DD 형식 시도
+    if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+        return Ok(date);
+    }
+    
+    // YYYYMMDD 형식 시도
+    if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y%m%d") {
+        return Ok(date);
+    }
+    
+    // 두 형식 모두 실패
+    Err(StockrsError::General {
+        message: format!("날짜 형식을 파싱할 수 없습니다: {}. YYYY-MM-DD 또는 YYYYMMDD 형식을 사용해주세요.", date_str)
+    })
 }

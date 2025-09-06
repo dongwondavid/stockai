@@ -1,3 +1,11 @@
+2025-09-06T01:05:00+09:00: stockrs/src/model/onnx_predictor/features.rs: TASK.md 기반 누락 특징 매핑 추가(day17/day18/day24/day12/day15), 중복 키 정리
+2025-09-06T00:20:00+09:00: stockrs/src/model/onnx_predictor/features/day2.rs: 전일 데이터 없을 때 중립값 반환하도록 안전화 — get_prev_daily_data_opt 사용 및 에러→중립 처리
+2025-09-06T00:20:05+09:00: stockrs/src/model/onnx_predictor/features/day3.rs: 오전 거래량 비율 계산 시 전일 거래량 None/0.0이면 0.5 반환하도록 안전화
+2025-09-06T00:20:10+09:00: stockrs/src/model/onnx_predictor/features/day8.rs: 전일 데이터 없는 경우 중립값(0.5)로 대체 — prev-day 조회를 get_prev_daily_data_opt로 전환
+2025-09-06T00:25:00+09:00: stockrs/src/model/onnx_predictor/features.rs: 누락된 특징 디스패처 매핑 다수 추가(day3/day4/day7/day8/day10/day14/day15/day19/day22/day23/day24/day25/day26/day27/day28) — features_new 정의와 정합화
+2025-09-06T00:10:00+09:00: stockrs/src/model/onnx_predictor/features/day25.rs: features_new 동기화 — DB 직접 조회 방식으로 리팩터링, gap/volume/volatility 관련 아침 세션 지표 추가 및 정합화
+2025-09-06T00:10:05+09:00: stockrs/src/model/onnx_predictor/features/day28.rs: features_new 동기화 — Pivot 계산 로직 정합화, 첫 거래일 기본값 처리로 누수 방지
+2025-09-06T00:10:10+09:00: stockrs/src/model/onnx_predictor/features/day7.rs: features_new 동기화 — SQL 기반 조회로 전환, EMA/패턴/마켓/변동성 레짐 지표 구현 정리
 2025-08-21T09:10:14+09:00: stockrs/src/utility/apis/korea_api.rs: 5분 버킷 구간을 고정 윈도우(01–05, 06–10, 11–15, 16–20, 21–25, 26–30) 기준으로 재정의. 00 및 31 이상은 제외.
 2025-08-21T09:10:14+09:00: stockrs/src/utility/apis/korea_api.rs: 5분 버킷 로깅 개선 — 전체 일자 시간집합 반복 출력 대신 버킷별(HHMM) 포함 시각(HHMMSS) 추적 및 1회 출력으로 수정
 2025-08-20T00:00:00Z: stockrs/src/model/dongwon.rs: 분봉 출력 시 오늘 날짜(YYYYMMDD) 데이터만 필터링하도록 수정
@@ -448,3 +456,12 @@
 2024-12-19 15:30:00: stockrs/src/model/onnx_predictor/features/: features_new 기반으로 기존 함수들 업데이트 (f64 타입 명시, 쿼리 최적화, 로깅 간소화)
 2025-08-21T10:05:00+09:00: stockrs/src/model/onnx_predictor/features/day4.rs: 3/5/10일 고점 대비 위치 계산을 features_new와 동일하게 보수 처리(SELECT MAX(high) Option 취급, 데이터 없음/비정상 시 Ok(0.0) 반환)로 정렬
 2025-08-21T10:36:00+09:00: stockrs/src/model/onnx_predictor/features/day4.rs: day4_pos_vs_high_10d를 features_new 동작으로 통일 — 현재가는 오전 5분봉 종가 사용, 기준은 전일까지의 최근 10일 종가 중 최고치(오늘 제외, MAX(close))로 변경. 데이터 10개 미만/비정상 시 0.0 반환
+2025-09-05T17:20:00+09:00: stockrs/src/utility/errors.rs: 추가 에러 헬퍼 구현 — features_new/errors.rs와 정합화를 위해 StockrsError::parsing(data_type, reason) 헬퍼 추가
+2025-09-05T17:25:00+09:00: stockrs/src/model/onnx_predictor/features/utils.rs: get_prev_daily_data_opt 함수 추가 — features_new/utils.rs의 안전한 전일 일봉 조회 로직 이식하여 전일 데이터가 없을 때 None 반환하도록 구현
+2025-09-05T17:32:00+09:00: stockrs/src/model/onnx_predictor/features.rs: features_45_summary.txt의 45개 특징 중 누락된 키를 매핑 — day3_market_cap_over_3000b, day26_foreign_holding_ratio, day19_extreme_gap_flag, day14_morning_volume_abs, day14_up_vs_down_volume_ratio, day27_var_95_norm, day14_volume_volatility_10d, day1_long_candle_strength, day14_turnover_rate_20d, day23_return_vol_of_vol_20d, day7_volatility_regime, day25_multi_tf_vol_ratio, day19_gap_above_prev_high_flag, day22_kurtosis_60d, day28_pivot_support3, day27_risk_regime_flag, day15_volume_rsi_14, day28_intraday_r1_break_flag, day23_tail_index_hill, day19_gap_up_flag, day15_extreme_money_inflow_flag, day15_obv_change_5d, day26_net_buy_percentile_60d, day26_foreign_buy_pressure_intraday, day14_morning_turnover_ratio, day8_consecutive_bull_candle_strength, day24_opening_volatility_ratio, day11_distance_percentile_vs_sma20_120d, day14_morning_vs_prevday_volume, day15_chaikin_mf_trend, day25_prev_day_volume_and_morning_intensity, day22_kurtosis_10d, day24_morning_vs_prev_volatility_percentile, day10_sma_slope_change_ratio, day14_high_volume_spike_flag, day6_donchian20_break_strength, day6_adx_14, day27_drawdown_volatility_ratio, day13_atr_slope5, day15_ad_line_change_5d, day26_institution_flow_volatility 추가
+2025-09-05T18:10:00+09:00: stockrs/src/model/onnx_predictor.rs: 회귀용 배치 추론 추가 — best_index(i64) + values(f32 [N]/[N,1]/[1,N]) 처리, 범위 밖 인덱스는 argmax 폴백, RegressionPredictionResult 타입 도입
+2025-09-05T18:10:05+09:00: stockrs/src/model/minseop.rs: 회귀값 기반 모델 추가 — 최고 회귀값이 0 이상일 때만 매수, joonwoo 설정 재사용, lazy ONNXPredictor 초기화
+2025-09-05T18:10:08+09:00: stockrs/src/model.rs: minseop 모듈 노출 및 MinseopModel 재수출
+
+2025-09-05T17:05:00+09:00: TASK.md: features_new 기반 45개 특징을 features로 이식하는 상세 계획 작성 (사용자 수동 복사 시나리오 포함, Phase 0~8 정의, 완료 조건/검증 포인트/실행 커맨드 명시)
+2025-09-05T17:08:00+09:00: TASK.md: 비중복군 우선 이식 계획(Phase 3a) 추가 — day6~day28부터 복사/포팅, indicators/utils 정리, PowerShell 복사 스니펫 및 점진 빌드 검증 절차 명시

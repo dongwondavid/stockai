@@ -223,6 +223,14 @@ impl StockrsError {
             reason: message.into(),
         }
     }
+
+    /// 데이터 파싱 오류를 간편하게 생성하는 헬퍼 함수
+    pub fn parsing(data_type: impl Into<String>, reason: impl Into<String>) -> Self {
+        StockrsError::Parsing {
+            data_type: data_type.into(),
+            reason: reason.into(),
+        }
+    }
 }
 
 /// Korea Investment API 라이브러리의 오류를 StockrsError로 변환
