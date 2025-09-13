@@ -218,6 +218,7 @@ pub fn day28_intraday_r1_break_flag(
     trading_dates: &[String],
 ) -> StockrsResult<f64> {
     let r1 = day28_pivot_resistance1(db_5min, daily_db, stock_code, date, trading_dates)?;
+    if r1 == 0.0 { return Ok(0.0); }
     let m = get_morning_data(db_5min, stock_code, date)?;
     let hi = m.get_max_high().unwrap_or(0.0);
     Ok(if hi >= r1 { 1.0 } else { 0.0 })

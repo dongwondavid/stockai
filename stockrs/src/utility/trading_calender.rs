@@ -167,10 +167,29 @@ impl TradingCalender {
 
 impl Default for TradingCalender {
     fn default() -> Self {
-        Self::new().unwrap_or_else(|_| TradingCalender {
+        // 전역 설정을 우선 시도
+        if let Ok(cfg) = crate::utility::config::get_config() {
+            return TradingCalender {
+                all_trading_days_set: None,
+                all_trading_days_list: None,
+                trading_dates_file_path: cfg.time_management.trading_dates_file_path.clone(),
+            };
+        }
+
+        // config.toml이 없는 경우, 예시 설정으로 폴백
+        if let Ok(example_cfg) = crate::utility::config::Config::load_from_file("config.example.toml") {
+            return TradingCalender {
+                all_trading_days_set: None,
+                all_trading_days_list: None,
+                trading_dates_file_path: example_cfg.time_management.trading_dates_file_path,
+            };
+        }
+
+        // 최종 폴백: 안전한 기본 경로
+        TradingCalender {
             all_trading_days_set: None,
             all_trading_days_list: None,
             trading_dates_file_path: "data/samsung_1min_dates.txt".to_string(),
-        })
+        }
     }
 }

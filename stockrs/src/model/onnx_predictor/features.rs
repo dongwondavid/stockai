@@ -641,7 +641,7 @@ pub fn calculate_features_for_stock_optimized(
                 day3::calculate_breaks_6month_high(db_5min, daily_db, stock_code, date, trading_dates)?
             }
             "day3_morning_volume_ratio" => {
-                day3::calculate_morning_volume_ratio(db_5min, daily_db, stock_code, date, trading_dates)?
+                day3_new::calculate_morning_volume_ratio(db_5min, daily_db, stock_code, date, trading_dates)?
             }
             "day3_breaks_6month_high_with_long_candle" => {
                 day3_new::calculate_breaks_6month_high_with_long_candle(db_5min, daily_db, stock_code, date, trading_dates)?

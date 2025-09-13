@@ -4,6 +4,8 @@ use std::path::Path;
 use thiserror::Error;
 
 fn default_true() -> bool { true }
+fn default_trading_dates_file_path() -> String { "data/backtest_dates_1.txt".to_string() }
+fn default_schedule_dates_file_path() -> String { "data/samsung_1min_dates.txt".to_string() }
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
@@ -115,7 +117,12 @@ pub struct DongwonConfig {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct TimeManagementConfig {
+    #[serde(default = "default_trading_dates_file_path")]
     pub trading_dates_file_path: String,
+
+    /// 기간 자동 설정용 날짜 파일 경로 (시작/종료일 산출 전용)
+    #[serde(default = "default_schedule_dates_file_path")]
+    pub schedule_dates_file_path: String,
 
     pub event_check_interval: u64,
     // trading_dates_file_path에서 자동으로 시작/종료 날짜 설정
@@ -142,6 +149,9 @@ pub struct LoggingConfig {
     pub level: String,
     #[serde(default = "default_true")]
     pub show_backtest_next_event: bool,
+    /// ONNX 예측 특징/결과를 `model` 테이블에 기록할지 여부 (기본값: true)
+    #[serde(default = "default_true")]
+    pub store_model_records: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -196,16 +206,16 @@ impl Config {
 
         // ===== 자동 날짜 설정 기능 구현 =====
         if config.time_management.auto_set_dates_from_file {
-            let file_path = &config.time_management.trading_dates_file_path;
+            let file_path = &config.time_management.schedule_dates_file_path;
             let path = Path::new(file_path);
             if !path.exists() {
                 return Err(ConfigError::ValidationError(format!(
-                    "trading_dates_file_path 파일이 존재하지 않습니다: {}", file_path
+                    "schedule_dates_file_path 파일이 존재하지 않습니다: {}", file_path
                 )));
             }
             let content = fs::read_to_string(path).map_err(|e| {
                 ConfigError::ValidationError(format!(
-                    "trading_dates_file_path 파일 읽기 실패: {}", e
+                    "schedule_dates_file_path 파일 읽기 실패: {}", e
                 ))
             })?;
             let mut dates: Vec<chrono::NaiveDate> = content
@@ -221,7 +231,7 @@ impl Config {
                 .collect();
             if dates.is_empty() {
                 return Err(ConfigError::ValidationError(format!(
-                    "trading_dates_file_path 파일이 비어있거나 파싱할 수 없습니다: {}", file_path
+                    "schedule_dates_file_path 파일이 비어있거나 파싱할 수 없습니다: {}", file_path
                 )));
             }
             dates.sort_unstable();

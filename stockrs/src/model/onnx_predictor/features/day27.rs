@@ -6,6 +6,30 @@ fn safe_div(numer: f64, denom: f64) -> f64 { if denom == 0.0 { 0.0 } else { nume
 
 fn find_index(dates: &[String], date: &str) -> Option<usize> { dates.iter().position(|d| d == date) }
 
+fn collect_prev_n_daily_ohlc(
+    daily_db: &Connection,
+    code: &str,
+    date: &str,
+    n: usize,
+) -> Vec<(f64, f64, f64, f64)> {
+    if n == 0 { return Vec::new(); }
+    let table_name = if code.starts_with('A') { code.to_string() } else { format!("A{}", code) };
+    let query = format!(
+        "SELECT open, high, low, close FROM \"{}\" WHERE date < ? ORDER BY date DESC LIMIT {}",
+        table_name,
+        n
+    );
+    let mut stmt = match daily_db.prepare(&query) { Ok(s) => s, Err(_) => return Vec::new() };
+    let rows = match stmt.query_map([&date], |row| {
+        Ok((row.get::<_, f64>(0)?, row.get::<_, f64>(1)?, row.get::<_, f64>(2)?, row.get::<_, f64>(3)?))
+    }) { Ok(r) => r, Err(_) => return Vec::new() };
+    let mut out: Vec<(f64, f64, f64, f64)> = Vec::new();
+    for row in rows { if let Ok(v) = row { out.push(v); } }
+    out.reverse();
+    out
+}
+
+
 fn collect_prev_n_ohlc(
     daily_db: &Connection,
     code: &str,
@@ -130,16 +154,14 @@ pub fn day27_recovery_days_from_last_peak(
     daily_db: &Connection,
     stock_code: &str,
     date: &str,
-    trading_dates: &[String],
+    _trading_dates: &[String],
 ) -> StockrsResult<f64> {
-    if let Some(idx) = find_index(trading_dates, date) {
-        let ohlc = collect_prev_n_ohlc(daily_db, stock_code, trading_dates, idx, 120);
-        let closes = close_series(&ohlc);
-        let mut peak = f64::MIN; let mut last_peak_idx: i32 = -1; let mut cur_idx: i32 = -1; let mut i = 0i32;
-        for &c in &closes { if c >= peak { peak = c; last_peak_idx = i; } i += 1; cur_idx = i - 1; }
-        let days = if last_peak_idx >= 0 && cur_idx >= last_peak_idx { (cur_idx - last_peak_idx) as f64 } else { 0.0 };
-        Ok(days)
-    } else { Ok(0.0) }
+    let ohlc = collect_prev_n_daily_ohlc(daily_db, stock_code, date, 120);
+    let closes = close_series(&ohlc);
+    let mut peak = f64::MIN; let mut last_peak_idx: i32 = -1; let mut cur_idx: i32 = -1; let mut i = 0i32;
+    for &c in &closes { if c >= peak { peak = c; last_peak_idx = i; } i += 1; cur_idx = i - 1; }
+    let days = if last_peak_idx >= 0 && cur_idx >= last_peak_idx { (cur_idx - last_peak_idx) as f64 } else { 0.0 };
+    Ok(days)
 }
 
 // 95% VaR (정규 가정): -(μ - 1.645σ)
@@ -254,16 +276,14 @@ pub fn day27_time_to_recover_index(
     daily_db: &Connection,
     stock_code: &str,
     date: &str,
-    trading_dates: &[String],
+    _trading_dates: &[String],
 ) -> StockrsResult<f64> {
-    if let Some(idx) = find_index(trading_dates, date) {
-        let ohlc = collect_prev_n_ohlc(daily_db, stock_code, trading_dates, idx, 20);
-        let closes = close_series(&ohlc);
-        let mut peak = f64::MIN; let mut last_peak_idx: i32 = -1; let mut i = 0i32;
-        for &c in &closes { if c >= peak { peak = c; last_peak_idx = i; } i += 1; }
-        let cur = i - 1; let days = (cur - last_peak_idx).max(0) as f64;
-        Ok((days / 20.0).min(1.0))
-    } else { Ok(0.0) }
+    let ohlc = collect_prev_n_daily_ohlc(daily_db, stock_code, date, 20);
+    let closes = close_series(&ohlc);
+    let mut peak = f64::MIN; let mut last_peak_idx: i32 = -1; let mut i = 0i32;
+    for &c in &closes { if c >= peak { peak = c; last_peak_idx = i; } i += 1; }
+    let cur = i - 1; let days = (cur - last_peak_idx).max(0) as f64;
+    Ok((days / 20.0).min(1.0))
 }
 
 // Kelly 기준 위험도 근사치: mean/var 기반 음수면 위험 높음 → [0,1]
@@ -272,17 +292,13 @@ pub fn day27_risk_of_ruin_proxy(
     daily_db: &Connection,
     stock_code: &str,
     date: &str,
-    trading_dates: &[String],
+    _trading_dates: &[String],
 ) -> StockrsResult<f64> {
-    if let Some(idx) = find_index(trading_dates, date) {
-        let ohlc = collect_prev_n_ohlc(daily_db, stock_code, trading_dates, idx, 60);
-        let rets = daily_returns(&ohlc);
-        let mu = mean(&rets); let sd = std_dev(&rets); let var = sd*sd;
-        if var == 0.0 { return Ok(0.0); }
-        let kelly = mu / var;
-        // 음수 클램프 높을수록 위험 → ( -kelly ) 정규화
-        Ok(((-kelly).max(0.0)).min(1.0))
-    } else { Ok(0.0) }
+    let rets = daily_returns(&collect_prev_n_daily_ohlc(daily_db, stock_code, date, 60));
+    let mu = mean(&rets); let sd = std_dev(&rets); let var = sd*sd;
+    if var == 0.0 { return Ok(0.0); }
+    let kelly = mu / var;
+    Ok(((-kelly).max(0.0)).min(1.0))
 }
 
 // 드로우다운 분포 왜도
@@ -362,16 +378,14 @@ pub fn day27_risk_regime_flag(
     daily_db: &Connection,
     stock_code: &str,
     date: &str,
-    trading_dates: &[String],
+    _trading_dates: &[String],
 ) -> StockrsResult<f64> {
-    let mdd20 = day27_max_drawdown_20d(_db_5min, daily_db, stock_code, date, trading_dates)?;
-    if let Some(idx) = find_index(trading_dates, date) {
-        let ohlc = collect_prev_n_ohlc(daily_db, stock_code, trading_dates, idx, 20);
-        let rets = daily_returns(&ohlc);
-        let vol = std_dev(&rets);
-        let high_risk = (mdd20 > 0.1) || (vol > 0.03);
-        Ok(if high_risk { 1.0 } else { 0.0 })
-    } else { Ok(0.0) }
+    let mdd20 = day27_max_drawdown_20d(_db_5min, daily_db, stock_code, date, _trading_dates)?;
+    let ohlc = collect_prev_n_daily_ohlc(daily_db, stock_code, date, 20);
+    let rets = daily_returns(&ohlc);
+    let vol = std_dev(&rets);
+    let high_risk = (mdd20 > 0.1) || (vol > 0.03);
+    Ok(if high_risk { 1.0 } else { 0.0 })
 }
 
 

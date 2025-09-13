@@ -131,6 +131,41 @@ impl DBManager {
             (),
         )?;
 
+        // Create model table (예측 특징/결과 저장)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS model (
+                date TEXT NOT NULL,
+                time TEXT NOT NULL,
+                mode TEXT NOT NULL,
+                model_name TEXT NOT NULL,
+                features_json TEXT,
+                stocks_json TEXT,
+                feature_matrix_json TEXT,
+                class_probs_json TEXT,
+                reg_values_json TEXT,
+                best_stock TEXT,
+                best_score REAL NOT NULL,
+                version INTEGER,
+                notes TEXT,
+                PRIMARY KEY(date, time, mode, model_name)
+            )",
+            (),
+        )?;
+
+        // Helpful indices for queries
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_model_date ON model(date)",
+            (),
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_model_date_name ON model(date, model_name)",
+            (),
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_model_best_stock ON model(best_stock)",
+            (),
+        )?;
+
         let api_detector = ApiTypeDetector::new(api.clone());
 
         Ok(Self {
@@ -138,6 +173,48 @@ impl DBManager {
             api,
             api_detector,
         })
+    }
+
+    /// 모델 추론 결과를 저장 (중복 키일 때 명시적 에러 반환)
+    pub fn insert_model_record(
+        &self,
+        date: &str,
+        time: &str,
+        mode: &str,
+        model_name: &str,
+        features_json: Option<&str>,
+        stocks_json: Option<&str>,
+        feature_matrix_json: Option<&str>,
+        class_probs_json: Option<&str>,
+        reg_values_json: Option<&str>,
+        best_stock: Option<&str>,
+        best_score: f64,
+        version: Option<i64>,
+        notes: Option<&str>,
+    ) -> SqliteResult<()> {
+        self.conn.execute(
+            "INSERT INTO model (
+                date, time, mode, model_name, features_json, stocks_json,
+                feature_matrix_json, class_probs_json, reg_values_json,
+                best_stock, best_score, version, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                date,
+                time,
+                mode,
+                model_name,
+                features_json,
+                stocks_json,
+                feature_matrix_json,
+                class_probs_json,
+                reg_values_json,
+                best_stock,
+                best_score,
+                version,
+                notes,
+            ),
+        )?;
+        Ok(())
     }
 
     // Save trading data to database

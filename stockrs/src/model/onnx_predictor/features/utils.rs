@@ -455,10 +455,24 @@ pub fn is_special_trading_date(date: &str) -> bool {
     
     let special_dates = SPECIAL_DATES.get_or_init(|| {
         let mut dates = HashSet::new();
-        if let Ok(file) = File::open("data/start1000.txt") {
+        // 설정에서 경로를 우선 사용하고, 실패 시 기본값으로 폴백
+        let default_path = "data/start1000.txt".to_string();
+        let file_path = if let Ok(cfg) = config::get_config() {
+            cfg
+                .time_management
+                .special_start_dates_file_path
+                .clone()
+        } else {
+            default_path
+        };
+
+        if let Ok(file) = File::open(&file_path) {
             let reader = BufReader::new(file);
             for line in reader.lines().map_while(Result::ok) {
-                dates.insert(line.trim().to_string());
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    dates.insert(trimmed.to_string());
+                }
             }
         }
         dates

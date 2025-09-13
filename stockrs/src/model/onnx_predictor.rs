@@ -10,6 +10,7 @@ use ndarray::Array2;
 use ort::{Environment, SessionBuilder, Value};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use serde_json;
 use tracing::{debug, info, error};
 
 use crate::utility::apis::db_api::DbApi;
@@ -17,6 +18,7 @@ use crate::utility::apis::korea_api::KoreaApi;
 use crate::utility::config::get_config;
 use crate::utility::errors::{StockrsError, StockrsResult};
 use crate::utility::types::trading::TradingMode;
+use crate::time::TimeService;
 use features::calculate_features_for_stock_optimized;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -220,6 +222,16 @@ impl ONNXPredictor {
                 "최고 확률 종목: {} ({:.4})",
                 best_stock.stock_code, best_stock.probability
             );
+            // 저장 시도 (설정에서 허용될 때만)
+            if let Err(e) = self.save_model_record_classifier(
+                date,
+                &final_stocks,
+                &features_data,
+                &predictions,
+                &best_stock.stock_code,
+                best_stock.probability,
+                "onnx_classifier",
+            ) { error!("[ONNX] 모델 기록 저장 실패: {}", e); }
             Ok(Some(best_stock.stock_code.clone()))
         } else {
             info!("🔮 [ONNX] 예측 결과가 없습니다 - 매수하지 않음");
@@ -480,6 +492,16 @@ impl ONNXPredictor {
 
         let best = &all[0];
         info!("🏆 [ONNX-REG] 최고 종목: {} (value: {:.6})", best.stock_code, best.value);
+        // 저장 시도 (설정에서 허용될 때만)
+        if let Err(e) = self.save_model_record_regression(
+            date,
+            &final_stocks,
+            &features_data,
+            &all,
+            &best.stock_code,
+            best.value,
+            "onnx_regression",
+        ) { error!("[ONNX-REG] 모델 기록 저장 실패: {}", e); }
 
         Ok(Some((best.stock_code.clone(), best.value, all)))
     }
@@ -617,6 +639,169 @@ impl ONNXPredictor {
         };
 
         Ok((best_idx, values_f64))
+    }
+
+    fn trading_mode_str(&self) -> &'static str {
+        match self.trading_mode {
+            TradingMode::Real => "real",
+            TradingMode::Paper => "paper",
+            TradingMode::Backtest => "backtest",
+        }
+    }
+
+    fn current_time_hhmm() -> StockrsResult<String> {
+        let ymdhm = TimeService::global_format_ymdhm()?; // YYYYMMDDHHMM
+        Ok(ymdhm[8..12].to_string())
+    }
+
+    fn normalize_f64(x: f64) -> f64 {
+        if x.is_finite() { x } else { 0.0 }
+    }
+
+    fn save_model_record_classifier(
+        &self,
+        date: &str,
+        stocks: &Vec<String>,
+        features_data: &Vec<StockFeatures>,
+        predictions: &Vec<PredictionResult>,
+        best_stock: &str,
+        best_score: f64,
+        model_name: &str,
+    ) -> StockrsResult<()> {
+        let cfg = get_config()?;
+        if !cfg.logging.store_model_records { return Ok(()); }
+
+        // 시간/모드
+        let time_hhmm = Self::current_time_hhmm()?;
+        let mode_str = self.trading_mode_str();
+
+        // features/stocks
+        let features_json = serde_json::to_string(&self.features)
+            .map_err(|e| StockrsError::parsing("features_json", format!("{}", e)))?;
+        let stocks_json = serde_json::to_string(stocks)
+            .map_err(|e| StockrsError::parsing("stocks_json", format!("{}", e)))?;
+
+        // feature matrix
+        if features_data.len() != stocks.len() {
+            return Err(StockrsError::prediction("features_data와 stocks 길이 불일치".to_string()));
+        }
+        let mut feature_matrix: Vec<Vec<f64>> = Vec::with_capacity(features_data.len());
+        for sf in features_data.iter() {
+            let mut row = Vec::with_capacity(sf.features.len());
+            for &v in sf.features.iter() { row.push(Self::normalize_f64(v)); }
+            feature_matrix.push(row);
+        }
+        let feature_matrix_json = serde_json::to_string(&feature_matrix)
+            .map_err(|e| StockrsError::parsing("feature_matrix_json", format!("{}", e)))?;
+
+        // class probs aligned with stocks
+        use std::collections::HashMap;
+        let mut prob_map: HashMap<&str, f64> = HashMap::new();
+        for p in predictions.iter() { prob_map.insert(p.stock_code.as_str(), Self::normalize_f64(p.probability)); }
+        let class_probs: Vec<f64> = stocks.iter().map(|s| *prob_map.get(s.as_str()).unwrap_or(&0.0)).collect();
+        let class_probs_json = serde_json::to_string(&class_probs)
+            .map_err(|e| StockrsError::parsing("class_probs_json", format!("{}", e)))?;
+
+        // write to trading DB
+        let trading_db_path = &cfg.database.trading_db_path;
+        let conn = rusqlite::Connection::open(trading_db_path)
+            .map_err(|e| StockrsError::database("trading DB 열기", e.to_string()))?;
+        conn.execute(
+            "INSERT INTO model (
+                date, time, mode, model_name, features_json, stocks_json,
+                feature_matrix_json, class_probs_json, reg_values_json,
+                best_stock, best_score, version, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                date,
+                time_hhmm.as_str(),
+                mode_str,
+                model_name,
+                features_json.as_str(),
+                stocks_json.as_str(),
+                feature_matrix_json.as_str(),
+                class_probs_json.as_str(),
+                Option::<&str>::None,
+                best_stock,
+                Self::normalize_f64(best_score),
+                Some(1i64),
+                Option::<&str>::None,
+            ),
+        ).map_err(|e| StockrsError::database("model 레코드 저장", e.to_string()))?;
+
+        Ok(())
+    }
+
+    fn save_model_record_regression(
+        &self,
+        date: &str,
+        stocks: &Vec<String>,
+        features_data: &Vec<StockFeatures>,
+        all: &Vec<RegressionPredictionResult>,
+        best_stock: &str,
+        best_score: f64,
+        model_name: &str,
+    ) -> StockrsResult<()> {
+        let cfg = get_config()?;
+        if !cfg.logging.store_model_records { return Ok(()); }
+
+        // 시간/모드
+        let time_hhmm = Self::current_time_hhmm()?;
+        let mode_str = self.trading_mode_str();
+
+        // features/stocks/matrix
+        let features_json = serde_json::to_string(&self.features)
+            .map_err(|e| StockrsError::parsing("features_json", format!("{}", e)))?;
+        let stocks_json = serde_json::to_string(stocks)
+            .map_err(|e| StockrsError::parsing("stocks_json", format!("{}", e)))?;
+        if features_data.len() != stocks.len() {
+            return Err(StockrsError::prediction("features_data와 stocks 길이 불일치".to_string()));
+        }
+        let mut feature_matrix: Vec<Vec<f64>> = Vec::with_capacity(features_data.len());
+        for sf in features_data.iter() {
+            let mut row = Vec::with_capacity(sf.features.len());
+            for &v in sf.features.iter() { row.push(Self::normalize_f64(v)); }
+            feature_matrix.push(row);
+        }
+        let feature_matrix_json = serde_json::to_string(&feature_matrix)
+            .map_err(|e| StockrsError::parsing("feature_matrix_json", format!("{}", e)))?;
+
+        // regression values aligned with stocks
+        use std::collections::HashMap;
+        let mut val_map: HashMap<&str, f64> = HashMap::new();
+        for r in all.iter() { val_map.insert(r.stock_code.as_str(), Self::normalize_f64(r.value)); }
+        let values: Vec<f64> = stocks.iter().map(|s| *val_map.get(s.as_str()).unwrap_or(&0.0)).collect();
+        let reg_values_json = serde_json::to_string(&values)
+            .map_err(|e| StockrsError::parsing("reg_values_json", format!("{}", e)))?;
+
+        // write
+        let trading_db_path = &cfg.database.trading_db_path;
+        let conn = rusqlite::Connection::open(trading_db_path)
+            .map_err(|e| StockrsError::database("trading DB 열기", e.to_string()))?;
+        conn.execute(
+            "INSERT INTO model (
+                date, time, mode, model_name, features_json, stocks_json,
+                feature_matrix_json, class_probs_json, reg_values_json,
+                best_stock, best_score, version, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                date,
+                time_hhmm.as_str(),
+                mode_str,
+                model_name,
+                features_json.as_str(),
+                stocks_json.as_str(),
+                feature_matrix_json.as_str(),
+                Option::<&str>::None,
+                reg_values_json.as_str(),
+                best_stock,
+                Self::normalize_f64(best_score),
+                Some(1i64),
+                Option::<&str>::None,
+            ),
+        ).map_err(|e| StockrsError::database("model 레코드 저장", e.to_string()))?;
+
+        Ok(())
     }
 
     // 유틸리티 함수들

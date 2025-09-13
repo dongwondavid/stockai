@@ -1,4 +1,5 @@
 2025-09-06T01:05:00+09:00: stockrs/src/model/onnx_predictor/features.rs: TASK.md 기반 누락 특징 매핑 추가(day17/day18/day24/day12/day15), 중복 키 정리
+2025-09-06T01:15:00+09:00: TODO.md: ONNX 특징·결과 저장용 `model` 테이블 계획 추가(스키마/제약/저장 지점/옵션화)
 2025-09-06T00:20:00+09:00: stockrs/src/model/onnx_predictor/features/day2.rs: 전일 데이터 없을 때 중립값 반환하도록 안전화 — get_prev_daily_data_opt 사용 및 에러→중립 처리
 2025-09-06T00:20:05+09:00: stockrs/src/model/onnx_predictor/features/day3.rs: 오전 거래량 비율 계산 시 전일 거래량 None/0.0이면 0.5 반환하도록 안전화
 2025-09-06T00:20:10+09:00: stockrs/src/model/onnx_predictor/features/day8.rs: 전일 데이터 없는 경우 중립값(0.5)로 대체 — prev-day 조회를 get_prev_daily_data_opt로 전환
@@ -465,3 +466,10 @@
 
 2025-09-05T17:05:00+09:00: TASK.md: features_new 기반 45개 특징을 features로 이식하는 상세 계획 작성 (사용자 수동 복사 시나리오 포함, Phase 0~8 정의, 완료 조건/검증 포인트/실행 커맨드 명시)
 2025-09-05T17:08:00+09:00: TASK.md: 비중복군 우선 이식 계획(Phase 3a) 추가 — day6~day28부터 복사/포팅, indicators/utils 정리, PowerShell 복사 스니펫 및 점진 빌드 검증 절차 명시
+2025-09-06T01:40:00+09:00: stockrs/src/utility/config.rs, config.example.toml: logging.store_model_records 플래그 추가(default=true) — 모델 예측 기록 on/off 옵션
+2025-09-06T01:41:00+09:00: stockrs/src/db_manager.rs: `model` 테이블 생성 및 인덱스 추가, insert_model_record 헬퍼 구현 (중복 키 에러 반환)
+2025-09-06T01:52:00+09:00: stockrs/src/model/onnx_predictor.rs: 분류/회귀 예측 직후 모델 기록 저장 로직 추가 — 특징/종목/행렬/확률/회귀값 JSON 저장, 모드/HHMM/유니크키 가드, 설정 플래그로 on/off
+2025-09-12T15:34:37+09:00: stockrs/src/model/onnx_predictor/features/utils.rs: 특이일 파일 경로를 설정값(time_management.special_start_dates_file_path) 우선 사용하고 실패 시 data/start1000.txt로 폴백하도록 변경
+2025-09-13T16:04:17+09:00: TASK.md: 거래일 파일 역할 분리 계획 추가 — 기간 설정용(schedule)과 시장 개장일(trading)로 분리 설계
+2025-09-13T16:08:04+09:00: stockrs/src/utility/config.rs: TimeManagementConfig에 schedule_dates_file_path 추가, 자동 기간 설정이 해당 경로를 사용하도록 변경
+2025-09-13T16:08:04+09:00: config.example.toml: time_management 섹션에 schedule_dates_file_path 추가 및 주석 분리, 자동 날짜 설정 설명 수정
