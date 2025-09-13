@@ -215,7 +215,22 @@ impl MinseopModel {
         let is_before_force_close = now_h < force_close_hour || (now_h == force_close_hour && now_m < force_close_minute);
         if is_before_force_close { return Ok(None); }
 
-        let current_price = apis.get_current_price(self.current_stock.as_ref().unwrap())?;
+        let current_price = match apis.get_current_price(self.current_stock.as_ref().unwrap()) {
+            Ok(p) => p,
+            Err(e) => {
+                if apis.is_backtest_mode() {
+                    if let Ok(cfg) = get_config() { if cfg.backtest.skip_missing_price_as_unavailable {
+                        let msg = e.to_string();
+                        if msg.contains("해당 종목의 데이터가 1분봉 DB에 존재하지 않습니다") {
+                            info!("⚠️ [minseop] 가격 데이터 없음 - 틱 스킵 (force_close)");
+                            return Ok(None);
+                        }
+                    }}
+                }
+                println!("❌ [minseop] 현재가 조회 실패(force_close): {}", e);
+                return Err(Box::new(e) as Box<dyn Error>);
+            }
+        };
         let order = self.create_sell_all_order_global(current_price, "force_close")?;
         self.state = TradingState::Closed;
         info!("🔚 [minseop] 강제 정리 주문 생성: {} {}주 @{:.0}원", self.current_stock.as_ref().unwrap(), self.remaining_size, current_price);
@@ -224,7 +239,22 @@ impl MinseopModel {
 
     fn check_exit_conditions_global(&mut self, apis: &ApiBundle) -> Result<Option<Order>, Box<dyn Error>> {
         if self.state != TradingState::Holding { return Ok(None); }
-        let current_price = apis.get_current_price(self.current_stock.as_ref().unwrap())?;
+        let current_price = match apis.get_current_price(self.current_stock.as_ref().unwrap()) {
+            Ok(p) => p,
+            Err(e) => {
+                if apis.is_backtest_mode() {
+                    if let Ok(cfg) = get_config() { if cfg.backtest.skip_missing_price_as_unavailable {
+                        let msg = e.to_string();
+                        if msg.contains("해당 종목의 데이터가 1분봉 DB에 존재하지 않습니다") {
+                            info!("⚠️ [minseop] 가격 데이터 없음 - 틱 스킵 (exit check)");
+                            return Ok(None);
+                        }
+                    }}
+                }
+                println!("❌ [minseop] 현재가 조회 실패(exit check): {}", e);
+                return Err(Box::new(e) as Box<dyn Error>);
+            }
+        };
         let price_change_pct = ((current_price - self.entry_price) / self.entry_price) * 100.0;
         if price_change_pct <= -self.stop_loss_pct {
             let order = self.create_sell_all_order_global(current_price, "stop_loss")?; self.state = TradingState::Closed; info!("📉 [minseop] 손절: {:.1}% 손실 @{:.0}원", price_change_pct, current_price); return Ok(order);

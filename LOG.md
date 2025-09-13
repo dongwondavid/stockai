@@ -473,3 +473,4 @@
 2025-09-13T16:04:17+09:00: TASK.md: 거래일 파일 역할 분리 계획 추가 — 기간 설정용(schedule)과 시장 개장일(trading)로 분리 설계
 2025-09-13T16:08:04+09:00: stockrs/src/utility/config.rs: TimeManagementConfig에 schedule_dates_file_path 추가, 자동 기간 설정이 해당 경로를 사용하도록 변경
 2025-09-13T16:08:04+09:00: config.example.toml: time_management 섹션에 schedule_dates_file_path 추가 및 주석 분리, 자동 날짜 설정 설명 수정
+2025-09-13T16:15:00+09:00: stockrs/src/model/minseop.rs: 백테스트에서 1분봉 가격 미존재 시 강제청산/손절·익절 구간도 틱 스킵하도록 로직 추가 (joonwoo와 동일 패턴)
